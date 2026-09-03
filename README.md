@@ -25,10 +25,14 @@ CLI cannot inline pixels; it writes the PNG and prints path + metadata. MCP must
 | `render.window` | Short mp4 of the same stack for `{ startSec, endSec }` (capped at 12s). Writes `sessions/<id>/windows/`. MCP also returns a midpoint PNG in-band. |
 | `render.publish` | Full-cut 1080p (or source size if smaller) plus audio when the source has it. Writes `sessions/<id>/publish.mp4` or `outPath`. Poster still; not the iteration default. |
 | `media.transcribe` | `{ language, durationSec, words: [{ text, startSec, endSec, confidence? }], utterances? }`. Cached by source hash. Word-level, not a single 0–end blob. |
+| `timeline.cut` | Remove a source-second range. |
+| `timeline.keep` | Protect a source window: cuts skip it, rate is 1.0× there. The rest of the source remains (not isolate). |
+| `timeline.speed` | Global rate and/or a source-window rate. |
+| `timeline.layout` | Caller-supplied split / crop / palette / divider. No baked fractions or brand colors. Default is full-frame until set. |
 
-Not in this slice: ffmpeg `comp` engine, `comp.scaffold`, timeline mutation, `clip.fetch`. There is no `encode.preview` name.
+Not in this slice: ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 
-Time mapping is identity until timeline tools exist (`fileSec === tSec`).
+All tool times are **source seconds**. `render.still` / `render.window` / `render.publish` map through kept ranges + speed. `fileSec` is the output time; identity (`fileSec === tSec`) holds when there are no cuts or speed. Comp windows stay source seconds and still draw when the mapped file time corresponds to that source.
 
 ## CLI
 
@@ -59,7 +63,17 @@ npx tsx src/cli/cutstill.ts render.window --json '{"sessionId":"<id>","startSec"
 npx tsx src/cli/cutstill.ts render.publish --json '{"sessionId":"<id>"}'
 
 npx tsx src/cli/cutstill.ts media.transcribe --json '{"sessionId":"<id>"}'
+
+npx tsx src/cli/cutstill.ts timeline.cut --json '{"sessionId":"<id>","startSec":1.0,"endSec":2.0}'
+
+npx tsx src/cli/cutstill.ts timeline.keep --json '{"sessionId":"<id>","startSec":1.0,"endSec":2.0}'
+
+npx tsx src/cli/cutstill.ts timeline.speed --json '{"sessionId":"<id>","rate":2}'
+
+npx tsx src/cli/cutstill.ts timeline.layout --json '{"sessionId":"<id>","mode":"split","split":{"talent":0.4,"graphics":0.6,"dividerPx":8},"palette":{"divider":"#222222"}}'
 ```
+
+After a cut, `render.still` still takes source `tSec` and returns mapped `fileSec`. Example: cut `1.0–2.0`, then `tSec: 2.5` returns `fileSec` ≈ `1.5`.
 
 ## Sandbox
 

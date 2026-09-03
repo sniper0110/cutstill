@@ -45,7 +45,7 @@ function printHelp(): void {
 
 External agents own the brief and the cut. Author a Remotion composition,
 render a cheap still, see the PNG, patch, repeat. Window is for motion;
-publish is once.
+publish is once. Cut / keep / speed / layout map source seconds onto fileSec.
 
 Usage:
   npx tsx src/cli/cutstill.ts <tool> --json '{...}'

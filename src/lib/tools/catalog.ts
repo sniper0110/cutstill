@@ -29,6 +29,7 @@ const SESSION_SNAPSHOT: JsonSchema = {
     sourcePath: { type: "string" },
     briefPath: { type: "string" },
     comps: { type: "array", items: { type: "object", additionalProperties: true } },
+    timeline: { type: "object", additionalProperties: true },
     usage: { type: "array", items: { type: "object", additionalProperties: true } },
   },
 };
@@ -206,6 +207,82 @@ export const TOOL_SPECS: ToolSpec[] = [
         cached: { type: "boolean" },
       },
     },
+  ),
+  tool(
+    "timeline.cut",
+    "Remove a source-second range from the session timeline.",
+    {
+      type: "object",
+      required: ["sessionId", "startSec", "endSec"],
+      additionalProperties: false,
+      properties: { sessionId: SESSION_ID, startSec: SOURCE_SEC, endSec: SOURCE_SEC },
+    },
+    SESSION_SNAPSHOT,
+  ),
+  tool(
+    "timeline.keep",
+    "Protect a source-second window: exempt from timeline.cut, play at 1.0×. Source outside the window stays unless explicitly cut.",
+    {
+      type: "object",
+      required: ["sessionId", "startSec", "endSec"],
+      additionalProperties: false,
+      properties: { sessionId: SESSION_ID, startSec: SOURCE_SEC, endSec: SOURCE_SEC },
+    },
+    SESSION_SNAPSHOT,
+  ),
+  tool(
+    "timeline.speed",
+    "Set playback rate globally or on a source-second window.",
+    {
+      type: "object",
+      required: ["sessionId", "rate"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        rate: { type: "number", minimum: 0.1, description: "Playback rate (1 = unchanged)" },
+        startSec: SOURCE_SEC,
+        endSec: SOURCE_SEC,
+      },
+    },
+    SESSION_SNAPSHOT,
+  ),
+  tool(
+    "timeline.layout",
+    "Set canvas layout: caller-supplied split, crop, palette, and divider. Split fractions are caller values; nothing is baked in.",
+    {
+      type: "object",
+      required: ["sessionId", "mode"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        mode: { type: "string", enum: ["split", "full", "crop"] },
+        split: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            talent: { type: "number", description: "Primary pane fraction 0–1 (caller-supplied)" },
+            graphics: { type: "number", description: "Secondary pane fraction 0–1 (caller-supplied)" },
+            dividerPx: { type: "number" },
+          },
+        },
+        crop: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            width: { type: "number" },
+            height: { type: "number" },
+          },
+        },
+        palette: {
+          type: "object",
+          additionalProperties: true,
+          description: "Session palette. Caller-supplied; no baked brand.",
+        },
+      },
+    },
+    SESSION_SNAPSHOT,
   ),
 ];
 

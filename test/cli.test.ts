@@ -63,6 +63,10 @@ describe("CLI schema and --json bind", () => {
     expect(stdout).toMatch(/render\.window/);
     expect(stdout).toMatch(/render\.publish/);
     expect(stdout).toMatch(/media\.transcribe/);
+    expect(stdout).toMatch(/timeline\.cut/);
+    expect(stdout).toMatch(/timeline\.keep/);
+    expect(stdout).toMatch(/timeline\.speed/);
+    expect(stdout).toMatch(/timeline\.layout/);
     expect(stdout).toMatch(/see the PNG/);
     expect(stdout).not.toMatch(/ave direct/);
     expect(stdout).not.toMatch(/graphic\.upsert/);

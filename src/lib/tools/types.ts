@@ -8,6 +8,10 @@ export const V1_TOOL_NAMES = [
   "render.window",
   "render.publish",
   "media.transcribe",
+  "timeline.cut",
+  "timeline.keep",
+  "timeline.speed",
+  "timeline.layout",
 ] as const;
 
 export type V1ToolName = (typeof V1_TOOL_NAMES)[number];
@@ -15,6 +19,68 @@ export type V1ToolName = (typeof V1_TOOL_NAMES)[number];
 export interface SourceRange {
   startSec: number;
   endSec: number;
+}
+
+export type LayoutMode = "split" | "full" | "crop";
+
+export interface SpeedWindow extends SourceRange {
+  rate: number;
+}
+
+export interface SplitLayout {
+  talent: number;
+  graphics: number;
+  dividerPx?: number;
+}
+
+export interface CropLayout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SessionLayout {
+  mode: LayoutMode;
+  split?: SplitLayout;
+  crop?: CropLayout;
+  palette?: Record<string, string>;
+}
+
+export interface SessionTimeline {
+  removes: SourceRange[];
+  /** Protected source windows: not isolated. Exempt from cuts; forced to 1.0×. */
+  keeps: SourceRange[];
+  speed: number;
+  speedWindows: SpeedWindow[];
+  layout: SessionLayout;
+}
+
+export function defaultTimeline(): SessionTimeline {
+  return {
+    removes: [],
+    keeps: [],
+    speed: 1,
+    speedWindows: [],
+    layout: { mode: "full" },
+  };
+}
+
+export function normalizeTimeline(raw: Partial<SessionTimeline> | undefined): SessionTimeline {
+  const base = defaultTimeline();
+  if (!raw || typeof raw !== "object") return base;
+  return {
+    removes: Array.isArray(raw.removes) ? raw.removes : [],
+    keeps: Array.isArray(raw.keeps) ? raw.keeps : [],
+    speed: typeof raw.speed === "number" && raw.speed > 0 ? raw.speed : 1,
+    speedWindows: Array.isArray(raw.speedWindows) ? raw.speedWindows : [],
+    layout: {
+      mode: raw.layout?.mode === "split" || raw.layout?.mode === "crop" ? raw.layout.mode : "full",
+      split: raw.layout?.split,
+      crop: raw.layout?.crop,
+      palette: raw.layout?.palette ?? {},
+    },
+  };
 }
 
 export interface SessionComp {
@@ -62,6 +128,7 @@ export interface ToolSession {
   briefCopy?: string;
   comps: SessionComp[];
   transcript?: SessionTranscript;
+  timeline: SessionTimeline;
   usage: UsageEvent[];
   createdAt: number;
   updatedAt: number;

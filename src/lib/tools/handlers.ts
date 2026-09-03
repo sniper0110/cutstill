@@ -11,10 +11,11 @@ import {
   windowFileStem,
 } from "../remotion/engine.js";
 import { assertCompId, assertSandboxSource } from "../sandbox.js";
-import { mapSourceTime } from "../time.js";
+import { mapSessionTime } from "../time.js";
 import { transcribeSource } from "../transcribe/index.js";
 import {
   asRecord,
+  optionalNumber,
   optionalRecord,
   optionalString,
   requireNumber,
@@ -29,7 +30,7 @@ import {
   resolveSessionsRoot,
   sessionPaths,
 } from "./store.js";
-import type { SessionComp, ToolSession, ToolsContext } from "./types.js";
+import type { SessionComp, SessionLayout, ToolSession, ToolsContext } from "./types.js";
 
 function ctxRoot(ctx: ToolsContext): string {
   return resolveSessionsRoot(ctx);
@@ -127,8 +128,8 @@ export async function renderStill(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
   const tSec = requireNumber(rec.tSec, "tSec");
-  const mapped = mapSourceTime(tSec);
   const probed = await probeMediaMetadata(session.sourcePath);
+  const mapped = mapSessionTime(tSec, probed.durationSeconds, session.timeline);
   const dest = path.join(sessionPaths(ctxRoot(ctx), session.sessionId).stills, stillFileName(mapped.tSec));
   const compsActive = await renderSessionStill({
     session,
@@ -162,17 +163,17 @@ export async function renderWindow(input: unknown, ctx: ToolsContext) {
     requireNumber(rec.endSec, "endSec"),
     probed.durationSeconds,
   );
-  const start = mapSourceTime(range.startSec);
-  const end = mapSourceTime(range.endSec);
-  const stem = windowFileStem(start.fileSec, end.fileSec);
+  const start = mapSessionTime(range.startSec, probed.durationSeconds, session.timeline);
+  const end = mapSessionTime(range.endSec, probed.durationSeconds, session.timeline);
+  const stem = windowFileStem(start.tSec, end.tSec);
   const paths = sessionPaths(ctxRoot(ctx), session.sessionId);
   const dest = path.join(paths.windows, `${stem}.mp4`);
   const posterPath = path.join(paths.windows, `${stem}-poster.png`);
   const rendered = await renderSessionMedia({
     session,
     sessionsRoot: ctxRoot(ctx),
-    startSec: start.fileSec,
-    endSec: end.fileSec,
+    startSec: range.startSec,
+    endSec: range.endSec,
     width: probed.width,
     height: probed.height,
     dest,
@@ -181,8 +182,8 @@ export async function renderWindow(input: unknown, ctx: ToolsContext) {
   });
   await mutateSession(ctx, session.sessionId, (current) => {
     recordUsage(current, "render.window", {
-      startSec: start.fileSec,
-      endSec: end.fileSec,
+      startSec: range.startSec,
+      endSec: range.endSec,
       compsActive: rendered.compsActive,
     });
     return current;
@@ -233,6 +234,109 @@ export async function renderPublish(input: unknown, ctx: ToolsContext) {
   };
 }
 
+export async function timelineCut(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const startSec = requireNumber(rec.startSec, "startSec");
+  const endSec = requireNumber(rec.endSec, "endSec");
+  if (endSec <= startSec) throw new ToolError("INVALID_INPUT", "endSec must be greater than startSec");
+  const session = await mutateSession(ctx, sessionId, (current) => {
+    current.timeline.removes = [...current.timeline.removes, { startSec, endSec }];
+    recordUsage(current, "timeline.cut", { startSec, endSec });
+    return current;
+  });
+  return snapshot(ctx, session);
+}
+
+export async function timelineKeep(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const startSec = requireNumber(rec.startSec, "startSec");
+  const endSec = requireNumber(rec.endSec, "endSec");
+  if (endSec <= startSec) throw new ToolError("INVALID_INPUT", "endSec must be greater than startSec");
+  const session = await mutateSession(ctx, sessionId, (current) => {
+    current.timeline.keeps = [...current.timeline.keeps, { startSec, endSec }];
+    recordUsage(current, "timeline.keep", { startSec, endSec });
+    return current;
+  });
+  return snapshot(ctx, session);
+}
+
+export async function timelineSpeed(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const rate = requireNumber(rec.rate, "rate");
+  if (rate <= 0) throw new ToolError("INVALID_INPUT", "rate must be > 0");
+  const startSec = optionalNumber(rec.startSec);
+  const endSec = optionalNumber(rec.endSec);
+  const session = await mutateSession(ctx, sessionId, (current) => {
+    if (startSec != null && endSec != null) {
+      if (endSec <= startSec) throw new ToolError("INVALID_INPUT", "endSec must be greater than startSec");
+      current.timeline.speedWindows = [
+        ...current.timeline.speedWindows.filter(
+          (window) => window.startSec !== startSec || window.endSec !== endSec,
+        ),
+        { startSec, endSec, rate },
+      ];
+    } else {
+      current.timeline.speed = rate;
+    }
+    recordUsage(current, "timeline.speed", { rate, startSec, endSec });
+    return current;
+  });
+  return snapshot(ctx, session);
+}
+
+export async function timelineLayout(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const mode = requireString(rec.mode, "mode");
+  if (mode !== "split" && mode !== "full" && mode !== "crop") {
+    throw new ToolError("INVALID_INPUT", "mode must be split, full, or crop");
+  }
+  const layout: SessionLayout = { mode };
+  if (rec.split && typeof rec.split === "object") {
+    const split = rec.split as Record<string, unknown>;
+    const talent = optionalNumber(split.talent);
+    const graphics = optionalNumber(split.graphics);
+    if (talent == null && graphics == null) {
+      throw new ToolError("INVALID_INPUT", "split requires talent and/or graphics");
+    }
+    const left = talent ?? (graphics != null ? 1 - graphics : 0.5);
+    const right = graphics ?? 1 - left;
+    layout.split = {
+      talent: left,
+      graphics: right,
+      dividerPx: optionalNumber(split.dividerPx),
+    };
+  }
+  if (rec.crop && typeof rec.crop === "object") {
+    const crop = rec.crop as Record<string, unknown>;
+    layout.crop = {
+      x: requireNumber(crop.x, "crop.x"),
+      y: requireNumber(crop.y, "crop.y"),
+      width: requireNumber(crop.width, "crop.width"),
+      height: requireNumber(crop.height, "crop.height"),
+    };
+  }
+  if (rec.palette && typeof rec.palette === "object") {
+    layout.palette = rec.palette as SessionLayout["palette"];
+  }
+  const session = await mutateSession(ctx, sessionId, (current) => {
+    current.timeline.layout = {
+      ...current.timeline.layout,
+      ...layout,
+      split: layout.split ?? current.timeline.layout.split,
+      crop: layout.crop ?? current.timeline.layout.crop,
+      palette: { ...current.timeline.layout.palette, ...layout.palette },
+    };
+    current.timeline.layout.mode = mode;
+    recordUsage(current, "timeline.layout", { mode });
+    return current;
+  });
+  return snapshot(ctx, session);
+}
+
 export async function mediaTranscribe(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
@@ -268,4 +372,8 @@ export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Pro
   "render.window": renderWindow,
   "render.publish": renderPublish,
   "media.transcribe": mediaTranscribe,
+  "timeline.cut": timelineCut,
+  "timeline.keep": timelineKeep,
+  "timeline.speed": timelineSpeed,
+  "timeline.layout": timelineLayout,
 };

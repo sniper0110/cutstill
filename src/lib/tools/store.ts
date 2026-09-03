@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { uuid } from "../uuid.js";
 import { ToolError } from "./errors.js";
-import type { ToolSession, ToolsContext } from "./types.js";
+import { defaultTimeline, normalizeTimeline, type ToolSession, type ToolsContext } from "./types.js";
 
 export function resolveSessionsRoot(ctx?: Pick<ToolsContext, "sessionsRoot">): string {
   if (ctx?.sessionsRoot) return path.resolve(ctx.sessionsRoot);
@@ -59,6 +59,7 @@ export async function readSession(sessionsRoot: string, sessionId: string): Prom
   const raw = JSON.parse(await readFile(file, "utf8")) as ToolSession;
   if (!Array.isArray(raw.comps)) raw.comps = [];
   if (!Array.isArray(raw.usage)) raw.usage = [];
+  raw.timeline = normalizeTimeline(raw.timeline);
   return raw;
 }
 
@@ -86,6 +87,7 @@ export async function createSessionRecord(
     briefPath: input.briefPath ? path.resolve(input.briefPath) : undefined,
     briefCopy: input.briefCopy,
     comps: [],
+    timeline: defaultTimeline(),
     usage: [],
     createdAt: now,
     updatedAt: now,
