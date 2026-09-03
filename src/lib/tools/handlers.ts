@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { probeMediaMetadata } from "../probe.js";
 import {
@@ -122,6 +122,27 @@ export async function compUpsert(input: unknown, ctx: ToolsContext) {
     return current;
   });
   return { comp, comps: next.comps };
+}
+
+export async function compRemove(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const id = assertCompId(requireString(rec.id, "id"));
+  const session = await load(ctx, sessionId);
+  const existing = session.comps.find((item) => item.id === id);
+  if (!existing) {
+    throw new ToolError("COMP_NOT_FOUND", `composition not found: ${id}`);
+  }
+  const dest = existing.sourcePath;
+  if (dest && existsSync(dest)) {
+    await unlink(dest);
+  }
+  const next = await mutateSession(ctx, sessionId, (current) => {
+    current.comps = current.comps.filter((item) => item.id !== id);
+    recordUsage(current, "comp.remove", { id });
+    return current;
+  });
+  return { removed: id, comps: next.comps };
 }
 
 export async function renderStill(input: unknown, ctx: ToolsContext) {
@@ -368,6 +389,7 @@ export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Pro
   "session.create": sessionCreate,
   "session.get": sessionGet,
   "comp.upsert": compUpsert,
+  "comp.remove": compRemove,
   "render.still": renderStill,
   "render.window": renderWindow,
   "render.publish": renderPublish,

@@ -104,6 +104,7 @@ export function stillHostSource(input: {
         from: 0,
         duration: 1,
         trimBefore: Math.max(0, Math.round((input.tSec - comp.window.startSec) * input.fps)),
+        playbackRate: 1,
       };
       const items = mapped.length > 0 ? mapped : [fallback];
       return items
@@ -180,14 +181,18 @@ export function videoHostSource(input: {
           return Math.max(1, Math.round((overlapEnd - fallbackStart) * input.fps));
         })(),
         trimBefore: Math.max(0, Math.round((fallbackStart - comp.window.startSec) * input.fps)),
+        playbackRate: 1,
       };
       const items = mapped.length > 0 ? mapped : [fallback];
       return items
         .map((item) => {
           const trim =
             item.trimBefore > 0 ? ` trimBefore={${Math.round(item.trimBefore)}}` : "";
+          const rate = item.playbackRate > 0 ? item.playbackRate : 1;
           return `        <Sequence from={${item.from}} durationInFrames={${Math.max(1, item.duration)}}${trim}>
-          <UserComp${index} {...(props.compProps?.["${comp.id}"] ?? {})} palette={props.palette} />
+          <SourceLock trimBefore={${Math.round(item.trimBefore)}} playbackRate={${rate}}>
+            <UserComp${index} {...(props.compProps?.["${comp.id}"] ?? {})} palette={props.palette} />
+          </SourceLock>
         </Sequence>`;
         })
         .join("\n");
@@ -197,9 +202,16 @@ export function videoHostSource(input: {
   const body = frameShell({ layout: input.layout, source, layers });
 
   return `import React from "react";
-import { AbsoluteFill, Composition, OffthreadVideo, Sequence, staticFile } from "remotion";
+import { AbsoluteFill, Composition, Freeze, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from "remotion";
 
 ${imports}
+
+function SourceLock(props: { trimBefore: number; playbackRate: number; children: React.ReactNode }) {
+  const frame = useCurrentFrame();
+  const rate = props.playbackRate > 0 ? props.playbackRate : 1;
+  const locked = props.trimBefore + (frame - props.trimBefore) * rate;
+  return <Freeze frame={locked}>{props.children}</Freeze>;
+}
 
 export type VideoHostProps = {
   palette?: Record<string, string>;

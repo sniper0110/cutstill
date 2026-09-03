@@ -11,6 +11,7 @@ describe("cutstill.tools.v1 catalog", () => {
       "session.create",
       "session.get",
       "comp.upsert",
+      "comp.remove",
       "render.still",
       "render.window",
       "render.publish",
@@ -56,6 +57,7 @@ describe("cutstill.tools.v1 catalog", () => {
   });
 
   it("recognizes only v1 names", () => {
+    expect(isV1ToolName("comp.remove")).toBe(true);
     expect(isV1ToolName("render.still")).toBe(true);
     expect(isV1ToolName("render.window")).toBe(true);
     expect(isV1ToolName("render.publish")).toBe(true);

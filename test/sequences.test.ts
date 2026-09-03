@@ -24,8 +24,48 @@ describe("planCompSequences", () => {
       id: "flow",
       from: 0,
       trimBefore: 86 * 30,
+      playbackRate: 1.1,
     });
     expect(planned[0]!.duration).toBe(Math.round((10 / 1.1) * 30));
+    expect(planned[0]!.duration * planned[0]!.playbackRate).toBeCloseTo(10 * 30, 0);
+    const lastFrame = planned[0]!.trimBefore + (planned[0]!.duration - 1) * planned[0]!.playbackRate;
+    expect(lastFrame / 30).toBeCloseTo(96, 0);
+  });
+
+  it("does not compress authored composition time when a 12s source window is 1.1×", () => {
+    const planned = planCompSequences({
+      comps: [flow],
+      startSec: 0,
+      endSec: 12,
+      fps: 30,
+      ranges: [{ startSec: 0, endSec: 200, rate: 1.1 }],
+    });
+    expect(planned).toHaveLength(1);
+    const seq = planned[0]!;
+    expect(seq.playbackRate).toBe(1.1);
+    expect(seq.trimBefore).toBe(0);
+    expect(seq.duration).toBe(Math.round((12 / 1.1) * 30));
+    expect(seq.duration * seq.playbackRate).toBeCloseTo(12 * 30, 0);
+    const lastFrame = seq.trimBefore + (seq.duration - 1) * seq.playbackRate;
+    expect(lastFrame / 30).toBeGreaterThan(11);
+    expect(lastFrame / 30).toBeCloseTo(12, 0);
+  });
+
+  it("keeps a late source cue inside the last output frames after 1.1×", () => {
+    const planned = planCompSequences({
+      comps: [{ ...flow, window: { startSec: 208.46, endSec: 240 } }],
+      startSec: 226,
+      endSec: 238,
+      fps: 30,
+      ranges: [{ startSec: 0, endSec: 400, rate: 1.1 }],
+    });
+    const seq = planned[0]!;
+    expect(seq.trimBefore).toBe(Math.round((226 - 208.46) * 30));
+    expect(seq.playbackRate).toBe(1.1);
+    const lastFrame = seq.trimBefore + (seq.duration - 1) * seq.playbackRate;
+    const lastSourceSec = 208.46 + lastFrame / 30;
+    expect(lastSourceSec).toBeGreaterThan(237);
+    expect(lastSourceSec).toBeCloseTo(238, 0);
   });
 
   it("keeps output from>0 when the comp starts after the render window", () => {
@@ -42,6 +82,7 @@ describe("planCompSequences", () => {
         from: Math.round((1.2 - 0.4) * 30),
         duration: Math.round((2.0 - 1.2) * 30),
         trimBefore: 0,
+        playbackRate: 1,
       },
     ]);
   });
@@ -58,8 +99,8 @@ describe("planCompSequences", () => {
       ],
     });
     expect(planned).toEqual([
-      { id: "flow", from: 0, duration: 30, trimBefore: 0 },
-      { id: "flow", from: 30, duration: 30, trimBefore: 60 },
+      { id: "flow", from: 0, duration: 30, trimBefore: 0, playbackRate: 1 },
+      { id: "flow", from: 30, duration: 30, trimBefore: 60, playbackRate: 1 },
     ]);
   });
 });
@@ -83,6 +124,7 @@ describe("planStillCompSequences", () => {
         from: 0,
         duration: 1,
         trimBefore: Math.round((90 - 74.55) * 30),
+        playbackRate: 1,
       },
     ]);
   });
@@ -97,7 +139,7 @@ describe("planStillCompSequences", () => {
         { startSec: 2, endSec: 3, rate: 1 },
       ],
     });
-    expect(planned).toEqual([{ id: "flow", from: 0, duration: 1, trimBefore: 75 }]);
+    expect(planned).toEqual([{ id: "flow", from: 0, duration: 1, trimBefore: 75, playbackRate: 1 }]);
   });
 });
 
@@ -110,12 +152,13 @@ describe("videoHostSource", () => {
       fps: 30,
       durationInFrames: 273,
       sourceStartSec: 86,
-      sequences: [{ id: "flow", from: 0, duration: 273, trimBefore: 2580 }],
+      sequences: [{ id: "flow", from: 0, duration: 273, trimBefore: 2580, playbackRate: 1.1 }],
     });
-    expect(host).toContain("import { AbsoluteFill, Composition, OffthreadVideo, Sequence, staticFile } from \"remotion\"");
+    expect(host).toContain("import { AbsoluteFill, Composition, Freeze, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from \"remotion\"");
     expect(host).toContain("<OffthreadVideo");
     expect(host).not.toContain("frame.png");
     expect(host).toMatch(/<Sequence from=\{0\} durationInFrames=\{273\} trimBefore=\{2580\}>/);
+    expect(host).toMatch(/<SourceLock trimBefore=\{2580\} playbackRate=\{1\.1\}>/);
     expect(host).toContain('id="VideoHost"');
     expect(host).toContain("durationInFrames={273}");
   });
@@ -129,7 +172,7 @@ describe("stillHostSource", () => {
       height: 360,
       fps: 30,
       tSec: 90,
-      sequences: [{ id: "flow", from: 0, duration: 1, trimBefore: 464 }],
+      sequences: [{ id: "flow", from: 0, duration: 1, trimBefore: 464, playbackRate: 1 }],
     });
     expect(host).toContain("import { AbsoluteFill, Composition, Img, Sequence, staticFile } from \"remotion\"");
     expect(host).toContain('staticFile("frame.png")');

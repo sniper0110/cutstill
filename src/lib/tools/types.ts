@@ -4,6 +4,7 @@ export const V1_TOOL_NAMES = [
   "session.create",
   "session.get",
   "comp.upsert",
+  "comp.remove",
   "render.still",
   "render.window",
   "render.publish",

@@ -56,6 +56,30 @@ export function clockMarkSampleX(tSec: number, fps = 30): number {
   return ((Math.round(tSec * fps) * 7) % 560) + 10;
 }
 
+/** Visible only in the last source second of a 12s window (useCurrentFrame). */
+export const LATE_CUE_TSX = `import React from "react";
+import { useCurrentFrame, useVideoConfig } from "remotion";
+
+export default function LateCue() {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const seconds = frame / fps;
+  if (seconds < 11) return null;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 40,
+        top: 40,
+        width: 120,
+        height: 80,
+        background: "#ff0033",
+      }}
+    />
+  );
+}
+`;
+
 export const MARKER_TSX = `import React from "react";
 
 export default function Marker(props: { color?: string }) {

@@ -6,15 +6,19 @@ export interface CompSequence {
   from: number;
   duration: number;
   trimBefore: number;
+  /** Slice rate: authored composition time advances in source seconds, not output time. */
+  playbackRate: number;
 }
 
 /**
  * Place each authored comp on the output timeline and keep useCurrentFrame
  * aligned to source seconds inside that comp's window.
  *
- * `from` / `duration` are output frames (after cuts and speed).
- * `trimBefore` is the composition frame at the first overlapping source second,
- * so a window of 86–96 does not reset the remotion tree to frame 0.
+ * `from` / `duration` are output frames (after cuts and speed) so the overlay
+ * stays on the sped talent track.
+ * `trimBefore` is the composition frame at the first overlapping source second.
+ * `playbackRate` is the kept-slice rate so useCurrentFrame still spans the
+ * source-second length (a 12s window at 1.1× does not end 1.09s early).
  */
 export function planCompSequences(input: {
   comps: SessionComp[];
@@ -43,6 +47,7 @@ export function planCompSequences(input: {
         from: Math.max(0, Math.round((fileStart - windowFileStart) * input.fps)),
         duration: Math.max(1, Math.round((fileEnd - fileStart) * input.fps)),
         trimBefore: Math.max(0, Math.round((overlapStart - comp.window.startSec) * input.fps)),
+        playbackRate: slice.rate > 0 ? slice.rate : 1,
       });
     }
   }

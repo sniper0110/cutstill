@@ -102,6 +102,28 @@ export const TOOL_SPECS: ToolSpec[] = [
     ],
   ),
   tool(
+    "comp.remove",
+    "Remove a composition from the session by id. Persisted; later stills and session.get no longer include it.",
+    {
+      type: "object",
+      required: ["sessionId", "id"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        id: { type: "string", description: "Composition id previously passed to comp.upsert" },
+      },
+    },
+    {
+      type: "object",
+      required: ["removed", "comps"],
+      properties: {
+        removed: { type: "string" },
+        comps: { type: "array", items: { type: "object", additionalProperties: true } },
+      },
+    },
+    [{ code: "COMP_NOT_FOUND", description: "No composition with that id in the session" }],
+  ),
+  tool(
     "render.still",
     "Render a PNG still at a source time: source frame plus Remotion comps whose window covers t. Default iteration unit.",
     {
