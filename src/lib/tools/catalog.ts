@@ -50,6 +50,16 @@ const SESSION_SNAPSHOT: JsonSchema = {
     comps: { type: "array", items: { type: "object", additionalProperties: true } },
     timeline: { type: "object", additionalProperties: true },
     usage: { type: "array", items: { type: "object", additionalProperties: true } },
+    sessionCost: {
+      type: "object",
+      required: ["currency", "totalUsd", "byTool", "entries"],
+      properties: {
+        currency: { type: "string", const: "USD" },
+        totalUsd: { type: "number", description: "Sum of usage[].costUsd" },
+        byTool: { type: "object", additionalProperties: { type: "object" } },
+        entries: { type: "array" },
+      },
+    },
   },
 };
 
