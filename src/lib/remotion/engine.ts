@@ -114,13 +114,16 @@ export async function renderSessionStill(input: {
     compProps: Object.fromEntries(active.map((comp) => [comp.id, comp.props])),
   };
 
+  const browserExecutable = chromePath();
   const composition = await selectComposition({
     serveUrl,
     id: "StillHost",
     inputProps,
+    logLevel: "error",
+    timeoutInMilliseconds: 60_000,
+    ...(browserExecutable ? { browserExecutable } : {}),
   });
 
-  const browserExecutable = chromePath();
   await mkdir(path.dirname(input.dest), { recursive: true });
   await renderStill({
     serveUrl,
@@ -128,6 +131,7 @@ export async function renderSessionStill(input: {
     output: input.dest,
     inputProps,
     frame: 0,
+    logLevel: "error",
     timeoutInMilliseconds: 60_000,
     chromiumOptions: {},
     ...(browserExecutable ? { browserExecutable } : {}),

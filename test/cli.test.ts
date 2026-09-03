@@ -9,27 +9,39 @@ import { ensureStandInMp4, tempSessionsRoot } from "./helpers.js";
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("src/cli/cutstill.ts");
 
+function parseJsonPayload(stdout: string): unknown {
+  const trimmed = stdout.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.lastIndexOf("{");
+    if (start >= 0) return JSON.parse(trimmed.slice(start));
+    throw new Error(`CLI stdout was not JSON: ${trimmed.slice(0, 400)}`);
+  }
+}
+
 async function cutstill(
   args: string[],
   env: NodeJS.ProcessEnv = {},
-): Promise<{ code: number; json: unknown; stdout: string }> {
+): Promise<{ code: number; json: unknown; stdout: string; stderr: string }> {
   try {
     const result = await execFileAsync("npx", ["tsx", CLI, ...args], {
       env: { ...process.env, ...env, CUTSTILL_SKIP_NETWORK: "1" },
       timeout: 90_000,
     });
     const stdout = result.stdout.toString();
-    return { code: 0, json: JSON.parse(stdout), stdout };
+    return { code: 0, json: parseJsonPayload(stdout), stdout, stderr: result.stderr.toString() };
   } catch (error) {
-    const err = error as { stdout?: string; stderr?: string; code?: number };
+    const err = error as { stdout?: string | Buffer; stderr?: string | Buffer; code?: number };
     const stdout = String(err.stdout ?? "");
+    const stderr = String(err.stderr ?? "");
     let json: unknown = null;
     try {
-      json = JSON.parse(stdout);
+      json = parseJsonPayload(stdout);
     } catch {
-      json = { parseError: stdout, stderr: String(err.stderr ?? "") };
+      json = { parseError: stdout, stderr };
     }
-    return { code: typeof err.code === "number" ? err.code : 1, json, stdout };
+    return { code: typeof err.code === "number" ? err.code : 1, json, stdout, stderr };
   }
 }
 
@@ -79,7 +91,7 @@ describe("CLI schema and --json bind", () => {
     const created = await cutstill(["session.create", "--json", JSON.stringify({ sourcePath })], env);
     const sessionId = (created.json as { sessionId: string }).sessionId;
     const still = await cutstill(["render.still", "--json", JSON.stringify({ sessionId, tSec: 0.3 })], env);
-    expect(still.code).toBe(0);
+    expect(still.code, `render.still failed: ${still.stdout}\n${still.stderr}`).toBe(0);
     const payload = still.json as { path: string; tSec: number; imageBase64?: string };
     expect(existsSync(payload.path)).toBe(true);
     expect(payload.tSec).toBe(0.3);
