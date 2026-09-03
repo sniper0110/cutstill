@@ -29,8 +29,13 @@ CLI cannot inline pixels; it writes the PNG and prints path + metadata. MCP must
 | `timeline.keep` | Protect a source window: cuts skip it, rate is 1.0× there. The rest of the source remains (not isolate). |
 | `timeline.speed` | Global rate and/or a source-window rate. |
 | `timeline.layout` | Canvas: `split` (landscape side-by-side), `stack` (portrait shorts, default 1080×1920), `full`, `crop`. Caller fractions (`split` / `stack`), optional seam `captions` (line and/or `words` karaoke), `bandHeight`, `captionFontSize`, palette (`caption` / `captionBand` / `captionActive` / `divider`). No baked 25/75 or brand colors. Default is full-frame until set. |
+| `fal.models` | Wired Fal model ids (Seedance 2.5 t2v / i2v / reference-to-video). |
+| `fal.generate` | Submit a Fal job. `sessionId` preferred so the mp4 lands in `sessions/<id>/fal/`. `generate_audio` defaults **false**. Needs **`FAL_KEY`**. No `fal.attach` yet. |
+| `fal.status` | Poll `jobId`. On completed, download to disk and return `path`. |
 
-Not in this slice: ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
+Shorts Vox upper pane: `fal.generate` (Seedance) → poll `fal.status` → later `fal.attach` (not in this slice) → `timeline.layout` stack → `render.still` / `render.window`. Live Fal needs **`FAL_KEY`** in the environment. Cutstill never prints the key. Tests mock HTTP; no live Fal in CI.
+
+Not in this slice: `fal.attach`, empty-pane expand, ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 
 All tool times are **source seconds**. `render.still` / `render.window` / `render.publish` map through kept ranges + speed. `fileSec` is the output time; identity (`fileSec === tSec`) holds when there are no cuts or speed. Comp windows stay source seconds and still draw when the mapped file time corresponds to that source.
 

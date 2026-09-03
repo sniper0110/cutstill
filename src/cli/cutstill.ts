@@ -66,6 +66,11 @@ render.still / render.window on that stack:
   npx tsx src/cli/cutstill.ts render.still --json '{"sessionId":"<id>","tSec":0.8}'
   npx tsx src/cli/cutstill.ts render.window --json '{"sessionId":"<id>","startSec":0.4,"endSec":1.5}'
 
+fal (Seedance 2.5 — set FAL_KEY; never printed). generate_audio defaults false.
+  npx tsx src/cli/cutstill.ts fal.models --json '{}'
+  npx tsx src/cli/cutstill.ts fal.generate --json '{"sessionId":"<id>","modelId":"bytedance/seedance-2.5/text-to-video","prompt":"upper-pane lantern, 9:16","resolution":"720p","duration":6,"aspect_ratio":"9:16"}'
+  npx tsx src/cli/cutstill.ts fal.status --json '{"sessionId":"<id>","jobId":"<jobId>"}'
+
 schema:
   npx tsx src/cli/cutstill.ts schema
 

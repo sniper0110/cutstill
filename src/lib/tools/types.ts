@@ -13,6 +13,9 @@ export const V1_TOOL_NAMES = [
   "timeline.keep",
   "timeline.speed",
   "timeline.layout",
+  "fal.models",
+  "fal.generate",
+  "fal.status",
 ] as const;
 
 export type V1ToolName = (typeof V1_TOOL_NAMES)[number];
@@ -163,6 +166,34 @@ export interface SessionComp {
   props: Record<string, unknown>;
 }
 
+export interface FalJob {
+  jobId: string;
+  modelId: string;
+  sessionId?: string;
+  status: "queued" | "in_progress" | "completed" | "failed";
+  path?: string;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  costUsd?: number;
+  prompt?: string;
+}
+
+export interface FalHttpRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+}
+
+export interface FalHttpResponse {
+  status: number;
+  json?: unknown;
+  bytes?: Buffer;
+}
+
+export type FalHttp = (req: FalHttpRequest) => Promise<FalHttpResponse>;
+
 export interface UsageEvent {
   action: string;
   at: number;
@@ -202,6 +233,7 @@ export interface ToolSession {
   transcript?: SessionTranscript;
   timeline: SessionTimeline;
   usage: UsageEvent[];
+  falJobs?: FalJob[];
   createdAt: number;
   updatedAt: number;
 }
@@ -215,6 +247,10 @@ export interface ToolsContext {
   transcribe?: (filePath: string, durationSeconds: number) => Promise<ToolsTranscribeResult>;
   now?: () => number;
   skipNetwork?: boolean;
+  /** Test-only Fal HTTP. Live calls use fetch + FAL_KEY. Never log the key. */
+  falHttp?: FalHttp;
+  /** Test-only key override. Live reads process.env.FAL_KEY. */
+  falKey?: string;
 }
 
 export interface JsonSchema {

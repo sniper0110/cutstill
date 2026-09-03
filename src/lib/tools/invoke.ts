@@ -10,6 +10,8 @@ export function defaultToolsContext(overrides: Partial<ToolsContext> = {}): Tool
     skipNetwork: overrides.skipNetwork ?? process.env.CUTSTILL_SKIP_NETWORK !== "0",
     transcribe: overrides.transcribe,
     now: overrides.now,
+    falHttp: overrides.falHttp,
+    falKey: overrides.falKey,
   };
 }
 

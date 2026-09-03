@@ -30,6 +30,7 @@ export function sessionPaths(sessionsRoot: string, sessionId: string) {
     remotionPublic: path.join(root, "remotion", "public"),
     usage: path.join(root, "usage.json"),
     cache: path.join(root, "cache"),
+    fal: path.join(root, "fal"),
   };
 }
 
@@ -41,6 +42,7 @@ export async function writeSession(sessionsRoot: string, session: ToolSession): 
   await mkdir(paths.windows, { recursive: true });
   await mkdir(paths.remotionPublic, { recursive: true });
   await mkdir(paths.cache, { recursive: true });
+  await mkdir(paths.fal, { recursive: true });
   await writeFile(paths.session, JSON.stringify(session, null, 2), "utf8");
   await writeFile(paths.usage, JSON.stringify(session.usage, null, 2), "utf8");
   if (session.transcript) {
@@ -59,6 +61,7 @@ export async function readSession(sessionsRoot: string, sessionId: string): Prom
   const raw = JSON.parse(await readFile(file, "utf8")) as ToolSession;
   if (!Array.isArray(raw.comps)) raw.comps = [];
   if (!Array.isArray(raw.usage)) raw.usage = [];
+  if (!Array.isArray(raw.falJobs)) raw.falJobs = [];
   raw.timeline = normalizeTimeline(raw.timeline);
   return raw;
 }

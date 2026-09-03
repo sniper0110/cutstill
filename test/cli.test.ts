@@ -67,6 +67,10 @@ describe("CLI schema and --json bind", () => {
     expect(stdout).toMatch(/timeline\.keep/);
     expect(stdout).toMatch(/timeline\.speed/);
     expect(stdout).toMatch(/timeline\.layout/);
+    expect(stdout).toMatch(/fal\.models/);
+    expect(stdout).toMatch(/fal\.generate/);
+    expect(stdout).toMatch(/fal\.status/);
+    expect(stdout).not.toMatch(/fal\.attach/);
     expect(stdout).toMatch(/mode":"stack"/);
     expect(stdout).toMatch(/captions/);
     expect(stdout).toMatch(/1080×1920|1080x1920/);
@@ -163,6 +167,38 @@ describe("CLI schema and --json bind", () => {
     expect(still.stdout).not.toMatch(/imageBase64/);
     expect(still.stdout.length).toBeLessThan(8_000);
   }, 90_000);
+
+  it("CLI fal.models lists wired ids without FAL_KEY", async () => {
+    const result = await cutstill(["fal.models", "--json", "{}"], { FAL_KEY: "" });
+    expect(result.code, `fal.models failed: ${result.stdout}\n${result.stderr}`).toBe(0);
+    const ids = ((result.json as { models: Array<{ id: string }> }).models ?? []).map((item) => item.id);
+    expect(ids).toContain("bytedance/seedance-2.5/text-to-video");
+    expect(ids).toContain("bytedance/seedance-2.5/image-to-video");
+    expect(ids).toContain("bytedance/seedance-2.5/reference-to-video");
+  });
+
+  it("CLI fal.generate without FAL_KEY exits 1 with FAL_AUTH", async () => {
+    const root = await tempSessionsRoot("cutstill-cli-fal-");
+    const sourcePath = await ensureStandInMp4();
+    const env = { CUTSTILL_SESSIONS_ROOT: root, FAL_KEY: "" };
+    const created = await cutstill(["session.create", "--json", JSON.stringify({ sourcePath })], env);
+    const sessionId = (created.json as { sessionId: string }).sessionId;
+    const result = await cutstill(
+      [
+        "fal.generate",
+        "--json",
+        JSON.stringify({
+          sessionId,
+          modelId: "bytedance/seedance-2.5/text-to-video",
+          prompt: "upper-pane lantern, 9:16",
+        }),
+      ],
+      env,
+    );
+    expect(result.code).toBe(1);
+    expect((result.json as { error: { code: string } }).error.code).toBe("FAL_AUTH");
+    expect(result.stdout).not.toMatch(/Key\s+\S+/);
+  });
 
   it("unknown tool exits 1 with { error }", async () => {
     const result = await cutstill(["not.a.tool", "--json", "{}"]);

@@ -1,6 +1,9 @@
 import { existsSync } from "node:fs";
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { defaultFalHttp, falDownload, falPoll, falResult, falSubmit, resolveFalKey } from "../fal/client.js";
+import { defaultFalVideoPath, jobPayload, readLooseJob, upsertSessionJob, writeLooseJob } from "../fal/jobs.js";
+import { falModelNeedsImage, isFalModelId, listFalModels } from "../fal/models.js";
 import { layoutCanvasSize } from "../layout.js";
 import { probeMediaMetadata } from "../probe.js";
 import {
@@ -24,6 +27,7 @@ import {
   ToolError,
 } from "./errors.js";
 import {
+  assertInsideSession,
   createSessionRecord,
   mutateSession,
   publicSession,
@@ -31,7 +35,15 @@ import {
   resolveSessionsRoot,
   sessionPaths,
 } from "./store.js";
-import type { SessionCaption, SessionCaptionWord, SessionComp, SessionLayout, ToolSession, ToolsContext } from "./types.js";
+import type {
+  FalJob,
+  SessionCaption,
+  SessionCaptionWord,
+  SessionComp,
+  SessionLayout,
+  ToolSession,
+  ToolsContext,
+} from "./types.js";
 
 function parseCaptionWord(raw: unknown, path: string): SessionCaptionWord {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -86,13 +98,18 @@ function snapshot(ctx: ToolsContext, session: ToolSession) {
   return publicSession(session, ctxRoot(ctx));
 }
 
-function recordUsage(session: ToolSession, action: string, metadata?: Record<string, unknown>): void {
+function recordUsage(
+  session: ToolSession,
+  action: string,
+  metadata?: Record<string, unknown>,
+  costUsd = 0,
+): void {
   session.usage = [
     ...session.usage,
     {
       action,
       at: Date.now(),
-      costUsd: 0,
+      costUsd,
       estimated: true,
       metadata,
     },
@@ -482,6 +499,208 @@ export async function mediaTranscribe(input: unknown, ctx: ToolsContext) {
   };
 }
 
+function falHttpFor(ctx: ToolsContext) {
+  return ctx.falHttp ?? defaultFalHttp;
+}
+
+function buildFalPayload(input: {
+  modelId: string;
+  prompt: string;
+  image_url?: string;
+  end_image_url?: string;
+  resolution?: string;
+  duration?: number;
+  aspect_ratio?: string;
+  generate_audio: boolean;
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    prompt: input.prompt,
+    generate_audio: input.generate_audio,
+  };
+  if (input.resolution) payload.resolution = input.resolution;
+  if (input.duration != null) payload.duration = String(input.duration);
+  if (input.aspect_ratio) payload.aspect_ratio = input.aspect_ratio;
+  if (input.modelId.endsWith("reference-to-video")) {
+    if (input.image_url) payload.image_urls = [input.image_url];
+  } else if (input.image_url) {
+    payload.image_url = input.image_url;
+  }
+  if (input.end_image_url) payload.end_image_url = input.end_image_url;
+  return payload;
+}
+
+async function persistFalJob(
+  ctx: ToolsContext,
+  sessionId: string | undefined,
+  job: FalJob,
+): Promise<void> {
+  const root = ctxRoot(ctx);
+  await writeLooseJob(root, { ...job, sessionId });
+  if (!sessionId) return;
+  await mutateSession(ctx, sessionId, (current) => {
+    current.falJobs = upsertSessionJob(current.falJobs, job);
+    return current;
+  });
+}
+
+async function loadFalJob(
+  ctx: ToolsContext,
+  sessionId: string | undefined,
+  jobId: string,
+): Promise<FalJob> {
+  if (sessionId) {
+    const session = await load(ctx, sessionId);
+    const found = (session.falJobs ?? []).find((item) => item.jobId === jobId);
+    if (found) return found;
+  }
+  const loose = await readLooseJob(ctxRoot(ctx), jobId);
+  if (loose) return loose;
+  throw new ToolError("INVALID_INPUT", `unknown Fal jobId: ${jobId}`);
+}
+
+async function materializeFalVideo(input: {
+  ctx: ToolsContext;
+  job: FalJob;
+  sessionId?: string;
+  outPath?: string;
+}): Promise<FalJob> {
+  const key = resolveFalKey(input.ctx.falKey);
+  const http = falHttpFor(input.ctx);
+  const { videoUrl } = await falResult({
+    http,
+    key,
+    modelId: input.job.modelId,
+    jobId: input.job.jobId,
+  });
+  const dest =
+    input.outPath ??
+    input.job.path ??
+    defaultFalVideoPath({
+      sessionFalDir: input.sessionId ? sessionPaths(ctxRoot(input.ctx), input.sessionId).fal : undefined,
+      sessionsRoot: ctxRoot(input.ctx),
+      jobId: input.job.jobId,
+    });
+  if (input.sessionId) {
+    assertInsideSession(sessionPaths(ctxRoot(input.ctx), input.sessionId).root, dest);
+  }
+  await mkdir(path.dirname(dest), { recursive: true });
+  const bytes = await falDownload({ http, key, url: videoUrl });
+  await writeFile(dest, bytes);
+  let width = input.job.width;
+  let height = input.job.height;
+  let durationSec = input.job.durationSec;
+  try {
+    const probed = await probeMediaMetadata(dest);
+    width = probed.width;
+    height = probed.height;
+    durationSec = probed.durationSeconds;
+  } catch {
+    /* keep prior */
+  }
+  return {
+    ...input.job,
+    status: "completed",
+    path: dest,
+    width,
+    height,
+    durationSec,
+  };
+}
+
+export async function falModels() {
+  return { models: listFalModels() };
+}
+
+export async function falGenerate(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const modelId = requireString(rec.modelId, "modelId");
+  if (!isFalModelId(modelId)) {
+    throw new ToolError("INVALID_INPUT", `unsupported modelId: ${modelId}`);
+  }
+  const prompt = requireString(rec.prompt, "prompt");
+  const image_url = optionalString(rec.image_url);
+  const end_image_url = optionalString(rec.end_image_url);
+  if (falModelNeedsImage(modelId) && !image_url) {
+    throw new ToolError("INVALID_INPUT", "image_url is required for image-to-video");
+  }
+  const resolution = optionalString(rec.resolution) ?? "720p";
+  if (resolution !== "480p" && resolution !== "720p") {
+    throw new ToolError("INVALID_INPUT", "resolution must be 480p or 720p");
+  }
+  const duration = optionalNumber(rec.duration);
+  if (duration != null && (duration < 4 || duration > 30)) {
+    throw new ToolError("INVALID_INPUT", "duration must be between 4 and 30");
+  }
+  const aspect_ratio = optionalString(rec.aspect_ratio);
+  const generate_audio = rec.generate_audio === true;
+  const sessionId = optionalString(rec.sessionId);
+  const outPath = optionalString(rec.outPath);
+  if (sessionId) await load(ctx, sessionId);
+  const key = resolveFalKey(ctx.falKey);
+  const http = falHttpFor(ctx);
+  const jobId = await falSubmit({
+    http,
+    key,
+    modelId,
+    payload: buildFalPayload({
+      modelId,
+      prompt,
+      image_url,
+      end_image_url,
+      resolution,
+      duration,
+      aspect_ratio,
+      generate_audio,
+    }),
+  });
+  let job: FalJob = {
+    jobId,
+    modelId,
+    sessionId,
+    status: "queued",
+    prompt,
+    costUsd: 0,
+  };
+  const peeked = await falPoll({ http, key, modelId, jobId });
+  job.status = peeked;
+  if (peeked === "completed") {
+    job = await materializeFalVideo({ ctx, job, sessionId, outPath });
+  }
+  await persistFalJob(ctx, sessionId, job);
+  if (sessionId) {
+    await mutateSession(ctx, sessionId, (current) => {
+      recordUsage(
+        current,
+        "fal.generate",
+        { modelId, jobId, resolution, duration, generate_audio },
+        job.costUsd ?? 0,
+      );
+      current.falJobs = upsertSessionJob(current.falJobs, job);
+      return current;
+    });
+  }
+  return jobPayload(job);
+}
+
+export async function falStatus(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const jobId = requireString(rec.jobId, "jobId");
+  const sessionId = optionalString(rec.sessionId);
+  const job = await loadFalJob(ctx, sessionId, jobId);
+  if (job.status === "completed" && job.path && existsSync(job.path)) {
+    return jobPayload(job);
+  }
+  const key = resolveFalKey(ctx.falKey);
+  const http = falHttpFor(ctx);
+  const status = await falPoll({ http, key, modelId: job.modelId, jobId });
+  let next: FalJob = { ...job, status };
+  if (status === "completed") {
+    next = await materializeFalVideo({ ctx, job: next, sessionId: sessionId ?? job.sessionId });
+  }
+  await persistFalJob(ctx, sessionId ?? next.sessionId, next);
+  return jobPayload(next);
+}
+
 export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Promise<unknown>> = {
   "session.create": sessionCreate,
   "session.get": sessionGet,
@@ -495,4 +714,7 @@ export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Pro
   "timeline.keep": timelineKeep,
   "timeline.speed": timelineSpeed,
   "timeline.layout": timelineLayout,
+  "fal.models": falModels,
+  "fal.generate": falGenerate,
+  "fal.status": falStatus,
 };

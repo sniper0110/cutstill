@@ -353,6 +353,102 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
     SESSION_SNAPSHOT,
   ),
+  tool(
+    "fal.models",
+    "List Fal model ids wired in this Cutstill slice. Live calls need FAL_KEY in the environment.",
+    { type: "object", additionalProperties: false, properties: {} },
+    {
+      type: "object",
+      required: ["models"],
+      properties: {
+        models: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              kind: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  ),
+  tool(
+    "fal.generate",
+    "Submit a Fal video job (Seedance 2.5). Returns jobId immediately. Poll fal.status. generate_audio defaults false for shorts under talk. Assets write under sessions/<id>/fal/. Set FAL_KEY. No fal.attach in this slice.",
+    {
+      type: "object",
+      required: ["modelId", "prompt"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        modelId: {
+          type: "string",
+          enum: [
+            "bytedance/seedance-2.5/text-to-video",
+            "bytedance/seedance-2.5/image-to-video",
+            "bytedance/seedance-2.5/reference-to-video",
+          ],
+        },
+        prompt: { type: "string", description: "Generation prompt" },
+        image_url: { type: "string", description: "Start frame URL for image-to-video (or first reference)" },
+        end_image_url: { type: "string", description: "Optional end frame URL" },
+        resolution: { type: "string", enum: ["480p", "720p"], description: "480p faster, 720p default" },
+        duration: { type: "number", minimum: 4, maximum: 30, description: "Seconds, 4–30" },
+        aspect_ratio: {
+          type: "string",
+          enum: ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+        },
+        generate_audio: {
+          type: "boolean",
+          description: "Default false for shorts under talk. Fal default is true; Cutstill sends false unless set.",
+        },
+        outPath: { type: "string", description: "Optional destination mp4. Default sessions/<id>/fal/<jobId>.mp4" },
+      },
+    },
+    {
+      type: "object",
+      required: ["jobId", "status"],
+      properties: {
+        jobId: { type: "string" },
+        status: { type: "string" },
+        path: { type: "string" },
+        width: { type: "number" },
+        height: { type: "number" },
+        durationSec: { type: "number" },
+        costUsd: { type: "number" },
+      },
+    },
+    [{ code: "FAL_AUTH", description: "FAL_KEY missing or Fal returned 401" }],
+  ),
+  tool(
+    "fal.status",
+    "Poll a Fal job. When completed, download the mp4 onto disk (session fal/ or outPath) and return path.",
+    {
+      type: "object",
+      required: ["jobId"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        jobId: { type: "string", description: "jobId from fal.generate" },
+      },
+    },
+    {
+      type: "object",
+      required: ["jobId", "status"],
+      properties: {
+        jobId: { type: "string" },
+        status: { type: "string" },
+        path: { type: "string" },
+        width: { type: "number" },
+        height: { type: "number" },
+        durationSec: { type: "number" },
+        costUsd: { type: "number" },
+      },
+    },
+    [{ code: "FAL_AUTH", description: "FAL_KEY missing or Fal returned 401" }],
+  ),
 ];
 
 export function getToolsCatalog(): ToolsCatalog {

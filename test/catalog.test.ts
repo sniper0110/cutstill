@@ -20,6 +20,9 @@ describe("cutstill.tools.v1 catalog", () => {
       "timeline.keep",
       "timeline.speed",
       "timeline.layout",
+      "fal.models",
+      "fal.generate",
+      "fal.status",
     ]);
   });
 
@@ -34,6 +37,10 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(names).toContain("timeline.keep");
     expect(names).toContain("timeline.speed");
     expect(names).toContain("timeline.layout");
+    expect(names).toContain("fal.models");
+    expect(names).toContain("fal.generate");
+    expect(names).toContain("fal.status");
+    expect(names).not.toContain("fal.attach");
   });
 
   it("layout split is caller fractions with no baked 25/75 or brand copy", () => {
@@ -76,6 +83,10 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(isV1ToolName("timeline.keep")).toBe(true);
     expect(isV1ToolName("timeline.speed")).toBe(true);
     expect(isV1ToolName("timeline.layout")).toBe(true);
+    expect(isV1ToolName("fal.models")).toBe(true);
+    expect(isV1ToolName("fal.generate")).toBe(true);
+    expect(isV1ToolName("fal.status")).toBe(true);
+    expect(isV1ToolName("fal.attach")).toBe(false);
     expect(isV1ToolName("encode.preview")).toBe(false);
     expect(isV1ToolName("graphic.upsert")).toBe(false);
   });
