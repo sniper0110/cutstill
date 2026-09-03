@@ -1,8 +1,9 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { extractSourceFrame } from "../remotion/engine.js";
 import { ToolError } from "../tools/errors.js";
 import {
@@ -15,28 +16,25 @@ import {
   type TalentBox,
 } from "./crop.js";
 
+const execFileAsync = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VENDORED_MODEL = path.join(HERE, "models", "pose_landmarker_lite.task");
+const PY_RUNNER = path.join(HERE, "pose_landmarker.py");
 
 export function poseModelPath(): string {
   const env = (process.env.CUTSTILL_POSE_MODEL ?? "").trim();
   if (env && existsSync(env)) return env;
-  if (existsSync(VENDORED_MODEL)) return VENDORED_MODEL;
   return VENDORED_MODEL;
 }
 
-function wasmDir(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../node_modules/@mediapipe/tasks-vision/wasm");
+export function posePython(): string {
+  return (process.env.CUTSTILL_PYTHON ?? "python3").trim() || "python3";
 }
 
-type PoseLandmarkerHandle = {
-  detect: (image: unknown) => { landmarks: PoseLandmark[][] };
-  close?: () => void;
-};
-
-let landmarkerPromise: Promise<PoseLandmarkerHandle> | null = null;
-
-async function loadLandmarker(): Promise<PoseLandmarkerHandle> {
+export async function detectPoseBoxOnPng(
+  pngPath: string,
+  source: { width: number; height: number },
+): Promise<{ box: PixelBox; confidence: number } | null> {
   const modelFile = poseModelPath();
   if (!existsSync(modelFile)) {
     throw new ToolError(
@@ -44,49 +42,47 @@ async function loadLandmarker(): Promise<PoseLandmarkerHandle> {
       "Pose Landmarker Lite model missing. Expected src/lib/talent/models/pose_landmarker_lite.task",
     );
   }
-  const wasm = wasmDir();
-  if (!existsSync(wasm)) {
-    throw new ToolError("TOOL_FAILED", "MediaPipe wasm files are not installed (@mediapipe/tasks-vision)");
+  if (!existsSync(PY_RUNNER)) {
+    throw new ToolError("TOOL_FAILED", "pose_landmarker.py is missing");
   }
-  const vision = await import("@mediapipe/tasks-vision");
-  const fileset = await vision.FilesetResolver.forVisionTasks(wasm);
-  const buffer = new Uint8Array(await readFile(modelFile));
-  return vision.PoseLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetBuffer: buffer, delegate: "CPU" },
-    runningMode: "IMAGE",
-    numPoses: 1,
-    minPoseDetectionConfidence: 0.4,
-    minPosePresenceConfidence: 0.4,
-    minTrackingConfidence: 0.4,
-  });
-}
-
-export async function getPoseLandmarker(): Promise<PoseLandmarkerHandle> {
-  if (!landmarkerPromise) {
-    landmarkerPromise = loadLandmarker().catch((error) => {
-      landmarkerPromise = null;
-      throw error;
+  let stdout = "";
+  let stderr = "";
+  try {
+    const result = await execFileAsync(posePython(), [PY_RUNNER, modelFile, pngPath], {
+      timeout: 45_000,
+      maxBuffer: 2_000_000,
+      env: { ...process.env, LIBGL_ALWAYS_SOFTWARE: "1" },
     });
+    stdout = result.stdout.toString();
+    stderr = result.stderr.toString();
+  } catch (error) {
+    const err = error as { stdout?: string | Buffer; stderr?: string | Buffer; code?: string | number };
+    stdout = String(err.stdout ?? "");
+    stderr = String(err.stderr ?? "");
+    const blob = `${stdout}\n${stderr}`;
+    if (blob.includes("MEDIAPIPE_MISSING") || blob.includes("No module named 'mediapipe'")) {
+      throw new ToolError(
+        "TOOL_FAILED",
+        "MediaPipe is not installed. Live media.face needs: pip install mediapipe",
+      );
+    }
+    throw new ToolError("TOOL_FAILED", (stderr || stdout || "Pose Landmarker failed").slice(0, 400));
   }
-  return landmarkerPromise;
-}
-
-export function resetPoseLandmarker(): void {
-  landmarkerPromise = null;
-}
-
-export async function detectPoseBoxOnPng(
-  pngPath: string,
-  source: { width: number; height: number },
-): Promise<{ box: PixelBox; confidence: number } | null> {
-  const landmarker = await getPoseLandmarker();
-  const image = await loadImage(pngPath);
-  const canvas = createCanvas(image.width, image.height);
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(image, 0, 0);
-  const result = landmarker.detect(canvas);
-  const landmarks = result.landmarks?.[0];
-  if (!landmarks || landmarks.length === 0) return null;
+  const line = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? "{}";
+  let parsed: { landmarks?: PoseLandmark[]; error?: string };
+  try {
+    parsed = JSON.parse(line) as { landmarks?: PoseLandmark[]; error?: string };
+  } catch {
+    throw new ToolError("TOOL_FAILED", "Pose Landmarker returned non-JSON");
+  }
+  if (parsed.error === "MEDIAPIPE_MISSING") {
+    throw new ToolError(
+      "TOOL_FAILED",
+      "MediaPipe is not installed. Live media.face needs: pip install mediapipe",
+    );
+  }
+  const landmarks = parsed.landmarks ?? [];
+  if (landmarks.length === 0) return null;
   return boxFromLandmarks(landmarks, source);
 }
 

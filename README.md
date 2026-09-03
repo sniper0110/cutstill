@@ -39,6 +39,8 @@ Shorts Vox upper pane: `fal.generate` (Seedance) → poll `fal.status` → later
 
 Short A talking-head: `media.face` → `timeline.cropFromTalent` (`target: "center"`, `zoom: 1`) → `render.still`. Fixes horizontal off-center; zoom stays the cover feel.
 
+Live `media.face` runs Pose Landmarker Lite (`src/lib/talent/models/pose_landmarker_lite.task`) through `python3` (`pip install -r src/lib/talent/requirements.txt`). Tests stub the detector; CI does not need MediaPipe.
+
 Not in this slice: `fal.attach`, empty-pane expand, ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 
 All tool times are **source seconds**. `render.still` / `render.window` / `render.publish` map through kept ranges + speed. `fileSec` is the output time; identity (`fileSec === tSec`) holds when there are no cuts or speed. Comp windows stay source seconds and still draw when the mapped file time corresponds to that source.
