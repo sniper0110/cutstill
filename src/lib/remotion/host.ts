@@ -16,9 +16,13 @@ export function layoutStyle(layout?: SessionLayout): {
     const right = graphics ?? (talent != null ? 1 - talent : 0);
     const dividerPx = layout?.split?.dividerPx ?? 0;
     const dividerColor = layout?.palette?.divider ?? "#ffffff";
+    const pct = (n: number) => {
+      const value = n * 100;
+      return Number.isInteger(value) ? `${value}%` : `${Number(value.toFixed(4))}%`;
+    };
     return {
-      sourceWrap: `position:"relative",width:"${(left * 100).toFixed(4)}%",height:"100%",flexShrink:0`,
-      overlayWrap: `position:"relative",width:"${(right * 100).toFixed(4)}%",height:"100%",flexShrink:0`,
+      sourceWrap: `position:"relative",width:"${pct(left)}",height:"100%",flexShrink:0`,
+      overlayWrap: `position:"relative",width:"${pct(right)}",height:"100%",flexShrink:0`,
       divider:
         dividerPx > 0
           ? `<div style={{ width: ${dividerPx}, height: "100%", background: ${JSON.stringify(dividerColor)}, flexShrink: 0 }} />`
