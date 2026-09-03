@@ -3,6 +3,7 @@ export const TOOLS_CATALOG_ID = "cutstill.tools.v1";
 export const V1_TOOL_NAMES = [
   "session.create",
   "session.get",
+  "session.cost",
   "comp.upsert",
   "comp.remove",
   "render.still",
@@ -204,6 +205,12 @@ export interface FalHttpResponse {
 }
 
 export type FalHttp = (req: FalHttpRequest) => Promise<FalHttpResponse>;
+
+export interface CallCost {
+  costUsd: number;
+  currency: "USD";
+  sessionTotalUsd: number;
+}
 
 export interface UsageEvent {
   action: string;

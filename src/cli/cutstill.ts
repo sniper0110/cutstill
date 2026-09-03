@@ -78,6 +78,10 @@ media.face — pass the short window. Omit start/end only when keeps/cuts alread
 timeline.cropFromTalent zoom:1 keeps approved crop w/h/y and recenters X only:
   npx tsx src/cli/cutstill.ts timeline.cropFromTalent --json '{"sessionId":"<id>","target":"center","zoom":1}'
 
+cost (every tool JSON includes cost.costUsd + cost.sessionTotalUsd):
+  npx tsx src/cli/cutstill.ts render.still --json '{"sessionId":"<id>","tSec":0.8}'
+  npx tsx src/cli/cutstill.ts session.cost --json '{"sessionId":"<id>"}'
+
 schema:
   npx tsx src/cli/cutstill.ts schema
 

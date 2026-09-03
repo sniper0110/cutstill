@@ -19,9 +19,10 @@ CLI cannot inline pixels; it writes the PNG and prints path + metadata. MCP must
 | Tool | What it does |
 | --- | --- |
 | `session.create` | Session folder `sessions/<id>/` with source pointer, optional brief copy, empty comps, usage. |
-| `session.get` | Persisted snapshot. |
+| `session.get` | Persisted snapshot plus `cost` (this call $0, `sessionTotalUsd`) and `sessionCost` rollup. |
+| `session.cost` | `{ currency, totalUsd, byTool, entries }` for a final session price. |
 | `comp.upsert` | `{ sessionId, id, engine: "remotion", source, window, props? }`. Writes/patches TSX. Remotion only in this slice. |
-| `render.still` | Default iteration unit. Source frame at `tSec` plus Remotion comps whose window covers `t`. Returns `{ path, tSec, fileSec, compsActive, width, height }`. |
+| `render.still` | Default iteration unit. Returns path + `cost: { costUsd, currency, sessionTotalUsd }`. |
 | `render.window` | Short mp4 of the same stack for `{ startSec, endSec }` (capped at 12s). Writes `sessions/<id>/windows/`. MCP also returns a midpoint PNG in-band. |
 | `render.publish` | Full-cut 1080p (or source size if smaller) plus audio when the source has it. Writes `sessions/<id>/publish.mp4` or `outPath`. Poster still; not the iteration default. |
 | `media.transcribe` | `{ language, durationSec, words: [{ text, startSec, endSec, confidence? }], utterances? }`. Cached by source hash. Word-level, not a single 0–end blob. |
@@ -40,6 +41,8 @@ Shorts Vox upper pane: `fal.generate` (Seedance) → poll `fal.status` → later
 Short A talking-head: `media.face` with the short’s `startSec`/`endSec` (or rely on keep/cut remaining spans) → `timeline.cropFromTalent` `zoom: 1` (preserves approved crop scale, recenters X) → `render.still`.
 
 Live `media.face` runs Pose Landmarker Lite (`src/lib/talent/models/pose_landmarker_lite.task`) through `python3` (`pip install -r src/lib/talent/requirements.txt`). Tests stub the detector; CI does not need MediaPipe.
+
+Every tool result includes `cost: { costUsd, currency: "USD", sessionTotalUsd }`. Rates live in `src/lib/cost/rates.ts`. Fal generate prefers a vendor cost on the Fal payload; otherwise it estimates by duration/resolution. Transcribe is $0 when stubbed or cached. `media.face` is a small compute estimate ($0.001). Render still/window/publish use the documented per-still / per-output-second constants. Mutations are $0.
 
 Not in this slice: `fal.attach`, empty-pane expand, ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 

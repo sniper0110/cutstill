@@ -11,6 +11,16 @@ const COMMON_ERRORS = [
   { code: "TOOL_FAILED", description: "Handler failed" },
 ];
 
+const COST_OBJECT: JsonSchema = {
+  type: "object",
+  required: ["costUsd", "currency", "sessionTotalUsd"],
+  properties: {
+    costUsd: { type: "number", description: "USD for this call" },
+    currency: { type: "string", const: "USD" },
+    sessionTotalUsd: { type: "number", description: "Sum of usage[].costUsd after this call" },
+  },
+};
+
 function tool(
   name: ToolSpec["name"],
   description: string,
@@ -18,7 +28,16 @@ function tool(
   output: JsonSchema,
   extraErrors: ToolSpec["errors"] = [],
 ): ToolSpec {
-  return { name, description, input, output, errors: [...COMMON_ERRORS, ...extraErrors] };
+  return {
+    name,
+    description,
+    input,
+    output: {
+      ...output,
+      properties: { ...output.properties, cost: COST_OBJECT },
+    },
+    errors: [...COMMON_ERRORS, ...extraErrors],
+  };
 }
 
 const SESSION_SNAPSHOT: JsonSchema = {
@@ -63,9 +82,24 @@ export const TOOL_SPECS: ToolSpec[] = [
   ),
   tool(
     "session.get",
-    "Return the persisted session snapshot, including comps and usage.",
+    "Return the persisted session snapshot, including comps, usage, and cost totals.",
     { type: "object", required: ["sessionId"], additionalProperties: false, properties: { sessionId: SESSION_ID } },
     SESSION_SNAPSHOT,
+  ),
+  tool(
+    "session.cost",
+    "Session price rollup for the calling agent. totalUsd is sum of usage[].costUsd. byTool groups count and spend. entries is the usage log.",
+    { type: "object", required: ["sessionId"], additionalProperties: false, properties: { sessionId: SESSION_ID } },
+    {
+      type: "object",
+      required: ["currency", "totalUsd", "byTool", "entries"],
+      properties: {
+        currency: { type: "string", const: "USD" },
+        totalUsd: { type: "number" },
+        byTool: { type: "object", additionalProperties: { type: "object" } },
+        entries: { type: "array" },
+      },
+    },
   ),
   tool(
     "comp.upsert",

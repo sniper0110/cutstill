@@ -59,6 +59,7 @@ describe("CLI schema and --json bind", () => {
     const { stdout } = await execFileAsync("npx", ["tsx", CLI, "--help"], { timeout: 20_000 });
     expect(stdout).toMatch(/cutstill\.tools\.v1/);
     expect(stdout).toMatch(/session\.create/);
+    expect(stdout).toMatch(/session\.cost/);
     expect(stdout).toMatch(/comp\.upsert/);
     expect(stdout).toMatch(/render\.still/);
     expect(stdout).toMatch(/render\.window/);

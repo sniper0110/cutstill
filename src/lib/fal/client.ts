@@ -1,3 +1,4 @@
+import { readFalVendorCost } from "../cost/meter.js";
 import { ToolError } from "../tools/errors.js";
 import type { FalHttp, FalHttpRequest, FalHttpResponse } from "../tools/types.js";
 
@@ -118,7 +119,7 @@ export async function falResult(input: {
   key: string;
   modelId: string;
   jobId: string;
-}): Promise<{ videoUrl: string }> {
+}): Promise<{ videoUrl: string; costUsd?: number }> {
   const res = await falRequest(input.http, input.key, {
     method: "GET",
     url: `${FAL_QUEUE_ORIGIN}/${input.modelId}/requests/${input.jobId}`,
@@ -133,7 +134,7 @@ export async function falResult(input: {
   const video = rec.video && typeof rec.video === "object" ? (rec.video as Record<string, unknown>) : {};
   const videoUrl = typeof video.url === "string" ? video.url : "";
   if (!videoUrl) throw new ToolError("TOOL_FAILED", "Fal result did not include video.url");
-  return { videoUrl };
+  return { videoUrl, costUsd: readFalVendorCost(rec) };
 }
 
 export async function falDownload(input: {

@@ -4,12 +4,14 @@ import { TOOLS_CATALOG_ID, V1_TOOL_NAMES, getToolsCatalog, isV1ToolName } from "
 describe("cutstill.tools.v1 catalog", () => {
   it("names the catalog and the v1 tools", () => {
     const catalog = getToolsCatalog();
+    expect(catalog.tools.every((tool) => tool.output.properties?.cost)).toBe(true);
     expect(catalog.schema).toBe("cutstill.tools.v1");
     expect(TOOLS_CATALOG_ID).toBe("cutstill.tools.v1");
     expect(catalog.tools.map((tool) => tool.name)).toEqual([...V1_TOOL_NAMES]);
     expect(V1_TOOL_NAMES).toEqual([
       "session.create",
       "session.get",
+      "session.cost",
       "comp.upsert",
       "comp.remove",
       "render.still",
@@ -35,6 +37,7 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(names).not.toContain("comp.scaffold");
     expect(names).not.toContain("clip.fetch");
     expect(names).not.toContain("ave direct");
+    expect(names).toContain("session.cost");
     expect(names).toContain("timeline.cut");
     expect(names).toContain("timeline.keep");
     expect(names).toContain("timeline.speed");
@@ -79,6 +82,7 @@ describe("cutstill.tools.v1 catalog", () => {
   });
 
   it("recognizes only v1 names", () => {
+    expect(isV1ToolName("session.cost")).toBe(true);
     expect(isV1ToolName("comp.remove")).toBe(true);
     expect(isV1ToolName("render.still")).toBe(true);
     expect(isV1ToolName("render.window")).toBe(true);

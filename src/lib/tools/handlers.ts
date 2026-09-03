@@ -18,6 +18,15 @@ import {
 } from "../remotion/engine.js";
 import { assertCompId, assertSandboxSource } from "../sandbox.js";
 import { activeSourceWindows, mapSessionTime } from "../time.js";
+import {
+  estimateFaceCost,
+  estimatePublishCost,
+  estimateStillCost,
+  estimateTranscribeCost,
+  estimateWindowCost,
+  resolveFalCharge,
+  summarizeUsage,
+} from "../cost/meter.js";
 import { transcribeSource } from "../transcribe/index.js";
 import {
   asRecord,
@@ -106,6 +115,7 @@ function recordUsage(
   action: string,
   metadata?: Record<string, unknown>,
   costUsd = 0,
+  estimated = true,
 ): void {
   session.usage = [
     ...session.usage,
@@ -113,7 +123,7 @@ function recordUsage(
       action,
       at: Date.now(),
       costUsd,
-      estimated: true,
+      estimated,
       metadata,
     },
   ];
@@ -141,7 +151,14 @@ export async function sessionCreate(input: unknown, ctx: ToolsContext) {
 export async function sessionGet(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
-  return snapshot(ctx, session);
+  const report = summarizeUsage(session.usage);
+  return { ...snapshot(ctx, session), sessionCost: report };
+}
+
+export async function sessionCost(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
+  return summarizeUsage(session.usage);
 }
 
 export async function compUpsert(input: unknown, ctx: ToolsContext) {
@@ -180,7 +197,7 @@ export async function compUpsert(input: unknown, ctx: ToolsContext) {
     const index = current.comps.findIndex((item) => item.id === id);
     if (index >= 0) current.comps[index] = comp;
     else current.comps.push(comp);
-    recordUsage(current, "comp.upsert", { id });
+    recordUsage(current, "comp.upsert", { id }, 0);
     return current;
   });
   return { comp, comps: next.comps };
@@ -201,7 +218,7 @@ export async function compRemove(input: unknown, ctx: ToolsContext) {
   }
   const next = await mutateSession(ctx, sessionId, (current) => {
     current.comps = current.comps.filter((item) => item.id !== id);
-    recordUsage(current, "comp.remove", { id });
+    recordUsage(current, "comp.remove", { id }, 0);
     return current;
   });
   return { removed: id, comps: next.comps };
@@ -224,8 +241,9 @@ export async function renderStill(input: unknown, ctx: ToolsContext) {
     height: size.height,
     dest,
   });
+  const stillCost = estimateStillCost();
   await mutateSession(ctx, session.sessionId, (current) => {
-    recordUsage(current, "render.still", { tSec: mapped.tSec, compsActive });
+    recordUsage(current, "render.still", { tSec: mapped.tSec, compsActive }, stillCost);
     return current;
   });
   return {
@@ -265,12 +283,19 @@ export async function renderWindow(input: unknown, ctx: ToolsContext) {
     posterPath,
     hasAudio: probed.hasAudio,
   });
+  const windowCost = estimateWindowCost(rendered.durationSec);
   await mutateSession(ctx, session.sessionId, (current) => {
-    recordUsage(current, "render.window", {
-      startSec: range.startSec,
-      endSec: range.endSec,
-      compsActive: rendered.compsActive,
-    });
+    recordUsage(
+      current,
+      "render.window",
+      {
+        startSec: range.startSec,
+        endSec: range.endSec,
+        compsActive: rendered.compsActive,
+        durationSec: rendered.durationSec,
+      },
+      windowCost,
+    );
     return current;
   });
   return {
@@ -307,8 +332,14 @@ export async function renderPublish(input: unknown, ctx: ToolsContext) {
     posterPath,
     hasAudio: probed.hasAudio,
   });
+  const publishCost = estimatePublishCost(rendered.durationSec);
   await mutateSession(ctx, session.sessionId, (current) => {
-    recordUsage(current, "render.publish", { path: dest, compsActive: rendered.compsActive });
+    recordUsage(
+      current,
+      "render.publish",
+      { path: dest, compsActive: rendered.compsActive, durationSec: rendered.durationSec },
+      publishCost,
+    );
     return current;
   });
   return {
@@ -488,9 +519,21 @@ export async function mediaTranscribe(input: unknown, ctx: ToolsContext) {
         cacheRoot,
         skipNetwork: ctx.skipNetwork ?? true,
       });
+  const stub = Boolean(ctx.transcribe) || (ctx.skipNetwork ?? true);
+  const transcribeCost = estimateTranscribeCost({
+    durationSec: result.durationSec,
+    cached: result.cached === true,
+    stub,
+  });
   await mutateSession(ctx, session.sessionId, (current) => {
     current.transcript = result;
-    recordUsage(current, "media.transcribe", { cached: result.cached === true });
+    recordUsage(
+      current,
+      "media.transcribe",
+      { cached: result.cached === true, stub },
+      transcribeCost,
+      transcribeCost === 0,
+    );
     return current;
   });
   return {
@@ -569,7 +612,7 @@ async function materializeFalVideo(input: {
 }): Promise<FalJob> {
   const key = resolveFalKey(input.ctx.falKey);
   const http = falHttpFor(input.ctx);
-  const { videoUrl } = await falResult({
+  const { videoUrl, costUsd: vendorUsd } = await falResult({
     http,
     key,
     modelId: input.job.modelId,
@@ -607,6 +650,7 @@ async function materializeFalVideo(input: {
     width,
     height,
     durationSec,
+    costUsd: vendorUsd ?? input.job.costUsd,
   };
 }
 
@@ -669,14 +713,22 @@ export async function falGenerate(input: unknown, ctx: ToolsContext) {
   if (peeked === "completed") {
     job = await materializeFalVideo({ ctx, job, sessionId, outPath });
   }
+  const charge = resolveFalCharge({
+    vendorUsd: job.costUsd,
+    durationSec: duration ?? job.durationSec,
+    resolution,
+    generateAudio: generate_audio,
+  });
+  job.costUsd = charge.costUsd;
   await persistFalJob(ctx, sessionId, job);
   if (sessionId) {
     await mutateSession(ctx, sessionId, (current) => {
       recordUsage(
         current,
         "fal.generate",
-        { modelId, jobId, resolution, duration, generate_audio },
-        job.costUsd ?? 0,
+        { modelId, jobId, resolution, duration, generate_audio, estimated: charge.estimated },
+        charge.costUsd,
+        charge.estimated,
       );
       current.falJobs = upsertSessionJob(current.falJobs, job);
       return current;
@@ -808,11 +860,16 @@ export async function mediaFace(input: unknown, ctx: ToolsContext) {
   const box = await resolveTalentBox(ctx, session, rec, probed);
   await mutateSession(ctx, sessionId, (current) => {
     current.talentBox = box;
-    recordUsage(current, "media.face", {
-      sampleCount: box.sampleCount,
-      confidence: box.confidence,
-      sampledSec: plan.sampledSec,
-    });
+    recordUsage(
+      current,
+      "media.face",
+      {
+        sampleCount: box.sampleCount,
+        confidence: box.confidence,
+        sampledSec: plan.sampledSec,
+      },
+      estimateFaceCost(),
+    );
     return current;
   });
   return talentPayload(box, probed.width, probed.height, plan.sampledSec);
@@ -873,6 +930,7 @@ export async function timelineCropFromTalent(input: unknown, ctx: ToolsContext) 
 export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Promise<unknown>> = {
   "session.create": sessionCreate,
   "session.get": sessionGet,
+  "session.cost": sessionCost,
   "comp.upsert": compUpsert,
   "comp.remove": compRemove,
   "render.still": renderStill,
