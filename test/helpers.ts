@@ -29,6 +29,28 @@ export default function Slide() {
 }
 `;
 
+/** useCurrentFrame-driven mark: frame 0 and later frames occupy different x. */
+export const CLOCK_TSX = `import React from "react";
+import { useCurrentFrame } from "remotion";
+
+export default function Clock() {
+  const frame = useCurrentFrame();
+  const x = (frame * 7) % 560;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: 8,
+        width: 28,
+        height: 28,
+        background: "#ff0033",
+      }}
+    />
+  );
+}
+`;
+
 export const MARKER_TSX = `import React from "react";
 
 export default function Marker(props: { color?: string }) {

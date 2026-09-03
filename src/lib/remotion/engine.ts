@@ -3,17 +3,12 @@ import { copyFile, mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import { runFfmpeg } from "../ffmpeg.js";
 import { probeMediaMetadata } from "../probe.js";
-import {
-  computeKeptRanges,
-  isIdentityTimeline,
-  keptInWindow,
-  mapSessionTime,
-  outputDuration,
-} from "../time.js";
+import { computeKeptRanges, isIdentityTimeline, keptInWindow, outputDuration } from "../time.js";
 import { ToolError } from "../tools/errors.js";
 import { sessionPaths } from "../tools/store.js";
 import { defaultTimeline, type SessionComp, type ToolSession } from "../tools/types.js";
 import { writeRemotionHost, writeRemotionVideoHost } from "./host.js";
+import { planCompSequences } from "./sequences.js";
 
 export const WINDOW_MAX_SEC = 12;
 export const PUBLISH_MAX_WIDTH = 1920;
@@ -154,6 +149,7 @@ export async function renderSessionStill(input: {
     publicDir: paths.remotionPublic,
     rootDir: process.cwd(),
     webpackOverride,
+    enableCaching: false,
     onProgress: () => undefined,
   });
 
@@ -352,21 +348,13 @@ export async function renderSessionMedia(input: {
   }
 
   const active = compsOverlapping(input.session.comps, input.startSec, input.endSec);
-  const windowFileStart = mapSessionTime(input.startSec, probed.durationSeconds, timeline).fileSec;
-  const sequences = active
-    .map((comp) => {
-      const srcStart = Math.max(comp.window.startSec, input.startSec);
-      const srcEnd = Math.min(comp.window.endSec, input.endSec);
-      const fileStart = mapSessionTime(srcStart, probed.durationSeconds, timeline).fileSec;
-      const fileEnd = mapSessionTime(srcEnd, probed.durationSeconds, timeline).fileSec;
-      if (fileEnd <= fileStart + 1e-4) return null;
-      return {
-        id: comp.id,
-        from: Math.max(0, Math.round((fileStart - windowFileStart) * fps)),
-        duration: Math.max(1, Math.round((fileEnd - fileStart) * fps)),
-      };
-    })
-    .filter((item): item is { id: string; from: number; duration: number } => item != null);
+  const sequences = planCompSequences({
+    comps: active,
+    startSec: input.startSec,
+    endSec: input.endSec,
+    fps,
+    ranges,
+  });
   await writeRemotionVideoHost(paths.remotion, {
     active,
     width: input.width,
@@ -382,10 +370,11 @@ export async function renderSessionMedia(input: {
   const { renderMedia, selectComposition } = await import("@remotion/renderer");
 
   const serveUrl = await bundle({
-    entryPoint: path.join(paths.remotion, "index.ts"),
+    entryPoint: path.join(paths.remotion, "video-index.ts"),
     publicDir: paths.remotionPublic,
     rootDir: process.cwd(),
     webpackOverride,
+    enableCaching: false,
     onProgress: () => undefined,
   });
 

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SessionComp, SessionLayout } from "../tools/types.js";
+import type { CompSequence } from "./sequences.js";
 
 export function layoutStyle(layout?: SessionLayout): {
   sourceWrap: string;
@@ -138,7 +139,7 @@ export function videoHostSource(input: {
   fps: number;
   durationInFrames: number;
   sourceStartSec: number;
-  sequences?: Array<{ id: string; from: number; duration: number }>;
+  sequences?: CompSequence[];
   layout?: SessionLayout;
 }): string {
   const imports = input.active
@@ -146,25 +147,30 @@ export function videoHostSource(input: {
     .join("\n");
   const layers = input.active
     .map((comp, index) => {
-      const mapped = input.sequences?.find((item) => item.id === comp.id);
-      const from = mapped
-        ? mapped.from
-        : Math.max(0, Math.round((comp.window.startSec - input.sourceStartSec) * input.fps));
-      const duration = mapped
-        ? Math.max(1, mapped.duration)
-        : (() => {
-            const overlapEnd = Math.min(
-              input.sourceStartSec + input.durationInFrames / input.fps,
-              comp.window.endSec,
-            );
-            return Math.max(
-              1,
-              Math.round((overlapEnd - Math.max(comp.window.startSec, input.sourceStartSec)) * input.fps),
-            );
-          })();
-      return `        <Sequence from={${from}} durationInFrames={${duration}}>
+      const mapped = (input.sequences ?? []).filter((item) => item.id === comp.id);
+      const fallbackStart = Math.max(comp.window.startSec, input.sourceStartSec);
+      const fallback: CompSequence = {
+        id: comp.id,
+        from: Math.max(0, Math.round((fallbackStart - input.sourceStartSec) * input.fps)),
+        duration: (() => {
+          const overlapEnd = Math.min(
+            input.sourceStartSec + input.durationInFrames / input.fps,
+            comp.window.endSec,
+          );
+          return Math.max(1, Math.round((overlapEnd - fallbackStart) * input.fps));
+        })(),
+        trimBefore: Math.max(0, Math.round((fallbackStart - comp.window.startSec) * input.fps)),
+      };
+      const items = mapped.length > 0 ? mapped : [fallback];
+      return items
+        .map((item) => {
+          const trim =
+            item.trimBefore > 0 ? ` trimBefore={${Math.round(item.trimBefore)}}` : "";
+          return `        <Sequence from={${item.from}} durationInFrames={${Math.max(1, item.duration)}}${trim}>
           <UserComp${index} {...(props.compProps?.["${comp.id}"] ?? {})} palette={props.palette} />
         </Sequence>`;
+        })
+        .join("\n");
     })
     .join("\n");
   const source = `<OffthreadVideo src={staticFile("source.mp4")} style={{ ${layoutStyle(input.layout).sourceImg} }} muted />`;
@@ -224,14 +230,14 @@ export async function writeRemotionVideoHost(
     fps: number;
     durationInFrames: number;
     sourceStartSec: number;
-    sequences?: Array<{ id: string; from: number; duration: number }>;
+    sequences?: CompSequence[];
     layout?: SessionLayout;
   },
 ): Promise<void> {
   await mkdir(remotionDir, { recursive: true });
   await writeFile(path.join(remotionDir, "VideoHost.tsx"), videoHostSource(input), "utf8");
   await writeFile(
-    path.join(remotionDir, "index.ts"),
+    path.join(remotionDir, "video-index.ts"),
     `import { registerRoot } from "remotion";\nimport { RemotionRoot } from "./VideoHost";\n\nregisterRoot(RemotionRoot);\n`,
     "utf8",
   );
