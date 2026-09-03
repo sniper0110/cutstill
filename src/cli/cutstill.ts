@@ -44,7 +44,8 @@ function printHelp(): void {
   console.log(`cutstill — tool surface (cutstill.tools.v1)
 
 External agents own the brief and the cut. Author a Remotion composition,
-render a cheap still, see the PNG, patch, repeat.
+render a cheap still, see the PNG, patch, repeat. Window is for motion;
+publish is once.
 
 Usage:
   npx tsx src/cli/cutstill.ts <tool> --json '{...}'
@@ -62,8 +63,8 @@ schema:
   npx tsx src/cli/cutstill.ts schema
 
 stdout is JSON. Exit 0 on success, exit 1 with { "error": { "code", "message" } }.
-CLI --json writes stills to disk and prints path + metadata. It does not inline pixels.
-MCP render.still returns the PNG in-band so a calling model sees the frame.
+CLI --json writes stills and shorts to disk and prints path + metadata. It does not inline pixels.
+MCP render.still and render.window return a PNG in-band so a calling model sees the frame.
 `);
 }
 

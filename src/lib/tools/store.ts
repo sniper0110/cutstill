@@ -24,6 +24,8 @@ export function sessionPaths(sessionsRoot: string, sessionId: string) {
     transcript: path.join(root, "transcript.json"),
     comps: path.join(root, "comps"),
     stills: path.join(root, "stills"),
+    windows: path.join(root, "windows"),
+    publish: path.join(root, "publish.mp4"),
     remotion: path.join(root, "remotion"),
     remotionPublic: path.join(root, "remotion", "public"),
     usage: path.join(root, "usage.json"),
@@ -36,6 +38,7 @@ export async function writeSession(sessionsRoot: string, session: ToolSession): 
   await mkdir(paths.root, { recursive: true });
   await mkdir(paths.comps, { recursive: true });
   await mkdir(paths.stills, { recursive: true });
+  await mkdir(paths.windows, { recursive: true });
   await mkdir(paths.remotionPublic, { recursive: true });
   await mkdir(paths.cache, { recursive: true });
   await writeFile(paths.session, JSON.stringify(session, null, 2), "utf8");

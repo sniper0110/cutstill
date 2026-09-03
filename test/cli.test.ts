@@ -54,16 +54,19 @@ describe("CLI schema and --json bind", () => {
     expect(catalog.tools.map((tool) => tool.name)).toEqual([...V1_TOOL_NAMES]);
   });
 
-  it("help lists the four tools and the still loop", async () => {
+  it("help lists the tools and the still loop", async () => {
     const { stdout } = await execFileAsync("npx", ["tsx", CLI, "--help"], { timeout: 20_000 });
     expect(stdout).toMatch(/cutstill\.tools\.v1/);
     expect(stdout).toMatch(/session\.create/);
     expect(stdout).toMatch(/comp\.upsert/);
     expect(stdout).toMatch(/render\.still/);
+    expect(stdout).toMatch(/render\.window/);
+    expect(stdout).toMatch(/render\.publish/);
     expect(stdout).toMatch(/media\.transcribe/);
     expect(stdout).toMatch(/see the PNG/);
     expect(stdout).not.toMatch(/ave direct/);
     expect(stdout).not.toMatch(/graphic\.upsert/);
+    expect(stdout).not.toMatch(/encode\.preview/);
   });
 
   it("round-trips session.create → session.get → media.transcribe with --json", async () => {

@@ -7,6 +7,28 @@ import type { ToolsContext } from "../src/lib/tools/types.js";
 
 export { ensureStandInMp4 };
 
+export const MOVING_TSX = `import React from "react";
+import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+
+export default function Slide() {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const x = interpolate(frame, [0, fps], [40, 200], { extrapolateRight: "clamp" });
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: 40,
+        width: 80,
+        height: 80,
+        background: "#00ff66",
+      }}
+    />
+  );
+}
+`;
+
 export const MARKER_TSX = `import React from "react";
 
 export default function Marker(props: { color?: string }) {

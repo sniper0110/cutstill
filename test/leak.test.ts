@@ -32,6 +32,7 @@ describe("no brand / kit leak", () => {
     expect(catalog).not.toContain("videoid");
     expect(catalog).not.toContain("title_card");
     expect(catalog).not.toContain("graphic.upsert");
+    expect(catalog).not.toContain("encode.preview");
 
     const { stdout } = await execFileAsync("npx", ["tsx", "src/cli/cutstill.ts", "--help"], { timeout: 20_000 });
     const help = stdout.toLowerCase();

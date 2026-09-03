@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TOOLS_CATALOG_ID, V1_TOOL_NAMES, getToolsCatalog, isV1ToolName } from "../src/lib/tools/index.js";
 
 describe("cutstill.tools.v1 catalog", () => {
-  it("names the catalog and only the first-slice tools", () => {
+  it("names the catalog and the v1 tools", () => {
     const catalog = getToolsCatalog();
     expect(catalog.schema).toBe("cutstill.tools.v1");
     expect(TOOLS_CATALOG_ID).toBe("cutstill.tools.v1");
@@ -12,6 +12,8 @@ describe("cutstill.tools.v1 catalog", () => {
       "session.get",
       "comp.upsert",
       "render.still",
+      "render.window",
+      "render.publish",
       "media.transcribe",
     ]);
   });
@@ -20,8 +22,6 @@ describe("cutstill.tools.v1 catalog", () => {
     const names = getToolsCatalog().tools.map((tool) => tool.name);
     expect(names).not.toContain("graphic.upsert");
     expect(names).not.toContain("encode.preview");
-    expect(names).not.toContain("render.window");
-    expect(names).not.toContain("render.publish");
     expect(names).not.toContain("comp.scaffold");
     expect(names).not.toContain("timeline.cut");
     expect(names).not.toContain("timeline.keep");
@@ -39,6 +39,9 @@ describe("cutstill.tools.v1 catalog", () => {
 
   it("recognizes only v1 names", () => {
     expect(isV1ToolName("render.still")).toBe(true);
+    expect(isV1ToolName("render.window")).toBe(true);
+    expect(isV1ToolName("render.publish")).toBe(true);
+    expect(isV1ToolName("encode.preview")).toBe(false);
     expect(isV1ToolName("graphic.upsert")).toBe(false);
   });
 });

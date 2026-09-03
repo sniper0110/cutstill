@@ -2,7 +2,14 @@ import { readFile } from "node:fs/promises";
 import { getToolsCatalog } from "./catalog.js";
 import { toolErrorPayload } from "./errors.js";
 import { defaultToolsContext, invokeTool } from "./invoke.js";
-import type { McpImageContent, McpTextContent, RenderStillResult, ToolsContext } from "./types.js";
+import type {
+  McpImageContent,
+  McpTextContent,
+  RenderPublishResult,
+  RenderStillResult,
+  RenderWindowResult,
+  ToolsContext,
+} from "./types.js";
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -32,6 +39,23 @@ function isRenderStillResult(value: unknown): value is RenderStillResult {
   return Boolean(value && typeof value === "object" && "path" in value && "tSec" in value && "compsActive" in value);
 }
 
+function hasPosterPath(value: unknown): value is { posterPath: string } {
+  return Boolean(value && typeof value === "object" && "posterPath" in value && typeof (value as { posterPath: unknown }).posterPath === "string");
+}
+
+async function withPosterImage(result: { posterPath: string }): Promise<{
+  content: Array<McpTextContent | McpImageContent>;
+  structuredContent: unknown;
+}> {
+  const bytes = await readFile(result.posterPath);
+  const imageBase64 = bytes.toString("base64");
+  const image: McpImageContent = { type: "image", data: imageBase64, mimeType: "image/png" };
+  return {
+    content: [{ type: "text", text: JSON.stringify(result) }, image],
+    structuredContent: { ...result, imageBase64, mimeType: "image/png" },
+  };
+}
+
 export async function mcpContentForResult(
   name: string,
   result: unknown,
@@ -47,6 +71,9 @@ export async function mcpContentForResult(
       content: [{ type: "text", text: JSON.stringify(result) }, image],
       structuredContent: { ...result, imageBase64, mimeType: "image/png" },
     };
+  }
+  if ((name === "render.window" || name === "render.publish") && hasPosterPath(result)) {
+    return withPosterImage(result as RenderWindowResult | RenderPublishResult);
   }
   return {
     content: [{ type: "text", text: JSON.stringify(result) }],

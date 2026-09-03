@@ -2,7 +2,14 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { probeMediaMetadata } from "../probe.js";
-import { renderSessionStill, stillFileName } from "../remotion/engine.js";
+import {
+  clampWindow,
+  publishSize,
+  renderSessionMedia,
+  renderSessionStill,
+  stillFileName,
+  windowFileStem,
+} from "../remotion/engine.js";
 import { assertCompId, assertSandboxSource } from "../sandbox.js";
 import { mapSourceTime } from "../time.js";
 import { transcribeSource } from "../transcribe/index.js";
@@ -146,6 +153,86 @@ export async function renderStill(input: unknown, ctx: ToolsContext) {
   };
 }
 
+export async function renderWindow(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
+  const probed = await probeMediaMetadata(session.sourcePath);
+  const range = clampWindow(
+    requireNumber(rec.startSec, "startSec"),
+    requireNumber(rec.endSec, "endSec"),
+    probed.durationSeconds,
+  );
+  const start = mapSourceTime(range.startSec);
+  const end = mapSourceTime(range.endSec);
+  const stem = windowFileStem(start.fileSec, end.fileSec);
+  const paths = sessionPaths(ctxRoot(ctx), session.sessionId);
+  const dest = path.join(paths.windows, `${stem}.mp4`);
+  const posterPath = path.join(paths.windows, `${stem}-poster.png`);
+  const rendered = await renderSessionMedia({
+    session,
+    sessionsRoot: ctxRoot(ctx),
+    startSec: start.fileSec,
+    endSec: end.fileSec,
+    width: probed.width,
+    height: probed.height,
+    dest,
+    posterPath,
+    hasAudio: probed.hasAudio,
+  });
+  await mutateSession(ctx, session.sessionId, (current) => {
+    recordUsage(current, "render.window", {
+      startSec: start.fileSec,
+      endSec: end.fileSec,
+      compsActive: rendered.compsActive,
+    });
+    return current;
+  });
+  return {
+    path: dest,
+    posterPath,
+    startSec: start.tSec,
+    endSec: end.tSec,
+    durationSec: rendered.durationSec,
+    compsActive: rendered.compsActive,
+    width: probed.width,
+    height: probed.height,
+    hasAudio: rendered.hasAudio,
+  };
+}
+
+export async function renderPublish(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
+  const probed = await probeMediaMetadata(session.sourcePath);
+  const size = publishSize(probed.width, probed.height);
+  const paths = sessionPaths(ctxRoot(ctx), session.sessionId);
+  const dest = optionalString(rec.outPath) ? path.resolve(optionalString(rec.outPath)!) : paths.publish;
+  const posterPath = dest.replace(/\.mp4$/i, "") + "-poster.png";
+  const rendered = await renderSessionMedia({
+    session,
+    sessionsRoot: ctxRoot(ctx),
+    startSec: 0,
+    endSec: probed.durationSeconds,
+    width: size.width,
+    height: size.height,
+    dest,
+    posterPath,
+    hasAudio: probed.hasAudio,
+  });
+  await mutateSession(ctx, session.sessionId, (current) => {
+    recordUsage(current, "render.publish", { path: dest, compsActive: rendered.compsActive });
+    return current;
+  });
+  return {
+    path: dest,
+    posterPath,
+    durationSec: rendered.durationSec,
+    width: size.width,
+    height: size.height,
+    hasAudio: rendered.hasAudio,
+  };
+}
+
 export async function mediaTranscribe(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
@@ -178,5 +265,7 @@ export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Pro
   "session.get": sessionGet,
   "comp.upsert": compUpsert,
   "render.still": renderStill,
+  "render.window": renderWindow,
+  "render.publish": renderPublish,
   "media.transcribe": mediaTranscribe,
 };

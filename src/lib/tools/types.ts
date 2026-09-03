@@ -5,6 +5,8 @@ export const V1_TOOL_NAMES = [
   "session.get",
   "comp.upsert",
   "render.still",
+  "render.window",
+  "render.publish",
   "media.transcribe",
 ] as const;
 
@@ -115,6 +117,27 @@ export interface RenderStillResult {
   compsActive: string[];
   width: number;
   height: number;
+}
+
+export interface RenderWindowResult {
+  path: string;
+  posterPath: string;
+  startSec: number;
+  endSec: number;
+  durationSec: number;
+  compsActive: string[];
+  width: number;
+  height: number;
+  hasAudio: boolean;
+}
+
+export interface RenderPublishResult {
+  path: string;
+  posterPath: string;
+  durationSec: number;
+  width: number;
+  height: number;
+  hasAudio: boolean;
 }
 
 export interface McpImageContent {

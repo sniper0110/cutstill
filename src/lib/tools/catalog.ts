@@ -126,6 +126,60 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   ),
   tool(
+    "render.window",
+    "Render a short mp4 of the same composite stack as render.still for a source range (capped at 12s). Motion/crop check — not the cheap default.",
+    {
+      type: "object",
+      required: ["sessionId", "startSec", "endSec"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        startSec: SOURCE_SEC,
+        endSec: SOURCE_SEC,
+      },
+    },
+    {
+      type: "object",
+      required: ["path", "posterPath", "startSec", "endSec", "durationSec", "compsActive", "width", "height"],
+      properties: {
+        path: { type: "string" },
+        posterPath: { type: "string" },
+        startSec: { type: "number" },
+        endSec: { type: "number" },
+        durationSec: { type: "number" },
+        compsActive: { type: "array", items: { type: "string" } },
+        width: { type: "number" },
+        height: { type: "number" },
+        hasAudio: { type: "boolean" },
+      },
+    },
+  ),
+  tool(
+    "render.publish",
+    "Publish the full cut: 1080p or source size if smaller, plus audio when the source has audio. Once — not the iteration default.",
+    {
+      type: "object",
+      required: ["sessionId"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        outPath: { type: "string", description: "Optional output mp4 path. Default sessions/<id>/publish.mp4" },
+      },
+    },
+    {
+      type: "object",
+      required: ["path", "posterPath", "durationSec", "width", "height", "hasAudio"],
+      properties: {
+        path: { type: "string" },
+        posterPath: { type: "string" },
+        durationSec: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" },
+        hasAudio: { type: "boolean" },
+      },
+    },
+  ),
+  tool(
     "media.transcribe",
     "Word-level transcript of the session source. Cached by source hash. Live vendor only when a key is present; tests use a stub.",
     { type: "object", required: ["sessionId"], additionalProperties: false, properties: { sessionId: SESSION_ID } },
