@@ -232,7 +232,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   ),
   tool(
     "timeline.cut",
-    "Remove a source-second range from the session timeline.",
+    "Remove a source-second range from the session timeline. Range must lie within the source duration.",
     {
       type: "object",
       required: ["sessionId", "startSec", "endSec"],
@@ -298,6 +298,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         crop: {
           type: "object",
           additionalProperties: false,
+          description: "Source crop rect. Under mode=stack this crops the lower talking-head pane (cover). Under mode=crop it crops the full canvas.",
           properties: {
             x: { type: "number" },
             y: { type: "number" },
@@ -324,7 +325,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         palette: {
           type: "object",
           additionalProperties: true,
-          description: "Session palette. Caller-supplied; no baked brand. caption / captionBand style the seam strip.",
+          description: "Session palette. Caller-supplied; no baked brand. caption / captionBand style the seam strip. divider draws the stack seam line.",
         },
       },
     },

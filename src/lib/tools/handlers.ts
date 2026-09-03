@@ -260,16 +260,32 @@ export async function renderPublish(input: unknown, ctx: ToolsContext) {
   };
 }
 
+function assertRangeWithinSource(startSec: number, endSec: number, durationSec: number, tool: string): void {
+  if (endSec <= startSec) throw new ToolError("INVALID_INPUT", "endSec must be greater than startSec");
+  if (startSec < 0) {
+    throw new ToolError("INVALID_INPUT", "startSec must be within the source duration");
+  }
+  if (endSec > durationSec + 1e-6) {
+    throw new ToolError(
+      "INVALID_INPUT",
+      `${tool} endSec must not exceed source duration (${durationSec}s)`,
+    );
+  }
+}
+
 export async function timelineCut(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const sessionId = requireString(rec.sessionId, "sessionId");
   const startSec = requireNumber(rec.startSec, "startSec");
   const endSec = requireNumber(rec.endSec, "endSec");
   if (endSec <= startSec) throw new ToolError("INVALID_INPUT", "endSec must be greater than startSec");
-  const session = await mutateSession(ctx, sessionId, (current) => {
-    current.timeline.removes = [...current.timeline.removes, { startSec, endSec }];
-    recordUsage(current, "timeline.cut", { startSec, endSec });
-    return current;
+  const current = await load(ctx, sessionId);
+  const probed = await probeMediaMetadata(current.sourcePath);
+  assertRangeWithinSource(startSec, endSec, probed.durationSeconds, "timeline.cut");
+  const session = await mutateSession(ctx, sessionId, (next) => {
+    next.timeline.removes = [...next.timeline.removes, { startSec, endSec }];
+    recordUsage(next, "timeline.cut", { startSec, endSec });
+    return next;
   });
   return snapshot(ctx, session);
 }

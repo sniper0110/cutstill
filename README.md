@@ -76,12 +76,15 @@ npx tsx src/cli/cutstill.ts timeline.layout --json '{
   "sessionId":"<id>",
   "mode":"stack",
   "stack":{"graphics":0.5,"talent":0.5},
+  "crop":{"x":0.2,"y":0.1,"width":0.4,"height":0.5},
   "captions":[{"text":"sample line","startSec":0.3,"endSec":2.0}],
-  "palette":{"captionBand":"#111111","caption":"#ffffff"}
+  "palette":{"captionBand":"#111111","caption":"#ffffff","divider":"#222222"}
 }'
 ```
 
-`mode: "stack"` is the shorts canvas: upper graphics pane, lower talking-head **cover crop**, default **1080×1920**. Caller supplies `stack.graphics` / `stack.talent`. `captions` sit on the pane seam (`startSec`/`endSec` are source seconds). Palette keys `caption` / `captionBand` style the strip. Then `render.still` / `render.window` use that canvas — no extra size fields required. Empty-pane expand is not in this slice.
+`mode: "stack"` is the shorts canvas: upper graphics pane, lower talking-head **cover crop**, default **1080×1920**. Caller supplies `stack.graphics` / `stack.talent`. Optional `crop` is applied to the **lower talent pane** (same rect as `mode: "crop"`). `captions` sit on the pane seam (`startSec`/`endSec` are source seconds). Palette keys `caption` / `captionBand` style the strip; `divider` draws a seam line between the panes. Then `render.still` / `render.window` use that canvas — no extra size fields required. Empty-pane expand is not in this slice.
+
+`timeline.cut` ranges must lie within the source duration (`INVALID_INPUT` if `endSec` is past EOF).
 
 After a cut, `render.still` still takes source `tSec` and returns mapped `fileSec`. Example: cut `1.0–2.0`, then `tSec: 2.5` returns `fileSec` ≈ `1.5`.
 

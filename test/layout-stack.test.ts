@@ -41,6 +41,48 @@ describe("layout canvas + stack fractions", () => {
     expect(host).toContain("width={1080}");
     expect(host).toContain("height={1920}");
   });
+
+  it("stack host applies layout.crop to the talent image, not only mode=crop", () => {
+    const crop = { x: 0.2, y: 0.1, width: 0.4, height: 0.5 };
+    const stacked = stillHostSource({
+      active: [],
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      tSec: 0.5,
+      layout: { mode: "stack", stack: { graphics: 0.5, talent: 0.5 }, crop },
+    });
+    expect(stacked).toMatch(/transform:"scale\(2\.5\)"/);
+    expect(stacked).toMatch(/transformOrigin:"50% 20%"/);
+    expect(stacked).toMatch(/objectFit:"cover"/);
+    const uncropped = stillHostSource({
+      active: [],
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      tSec: 0.5,
+      layout: { mode: "stack", stack: { graphics: 0.5, talent: 0.5 } },
+    });
+    expect(uncropped).not.toMatch(/transform:"scale\(/);
+  });
+
+  it("stack host draws palette.divider as a horizontal seam line", () => {
+    const host = stillHostSource({
+      active: [],
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      tSec: 0.5,
+      layout: {
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        palette: { divider: "#00ff66" },
+      },
+    });
+    expect(host).toContain("#00ff66");
+    expect(host).toMatch(/height:\s*4/);
+    expect(host).toMatch(/top:\s*958/);
+  });
 });
 
 describe("timeline.layout stack + captions", () => {
@@ -151,5 +193,68 @@ describe("timeline.layout stack + captions", () => {
     const winRgb = await readRgb24(frame);
     const winSeam = samplePixel(winRgb, win.width, 540, 960);
     expect(winSeam.g).toBeGreaterThan(160);
+  });
+
+  it("stack+crop changes the talent pane versus uncropped cover", async () => {
+    const root = await tempSessionsRoot("cutstill-stack-crop-");
+    const { sessionId } = await createSession(root);
+    await invokeTool(
+      "timeline.layout",
+      { sessionId, mode: "stack", stack: { graphics: 0.5, talent: 0.5 } },
+      ctxFor(root),
+    );
+    const open = (await invokeTool("render.still", { sessionId, tSec: 0.5 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const openRgb = await readRgb24(open.path);
+    const openTalent = samplePixel(openRgb, open.width, 540, 1440);
+
+    await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        crop: { x: 0, y: 0, width: 0.25, height: 0.35 },
+      },
+      ctxFor(root),
+    );
+    const cropped = (await invokeTool("render.still", { sessionId, tSec: 0.5 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const cropRgb = await readRgb24(cropped.path);
+    const cropTalent = samplePixel(cropRgb, cropped.width, 540, 1440);
+    const upper = samplePixel(cropRgb, cropped.width, 540, 200);
+    expect(
+      Math.abs(cropTalent.r - openTalent.r) +
+        Math.abs(cropTalent.g - openTalent.g) +
+        Math.abs(cropTalent.b - openTalent.b),
+    ).toBeGreaterThan(20);
+    expect(upper.r + upper.g + upper.b).toBeLessThan(80);
+  });
+
+  it("stack still draws palette.divider on the seam without captions", async () => {
+    const root = await tempSessionsRoot("cutstill-stack-div-");
+    const { sessionId } = await createSession(root);
+    await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        palette: { divider: "#00ff66" },
+      },
+      ctxFor(root),
+    );
+    const still = (await invokeTool("render.still", { sessionId, tSec: 0.5 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const rgb = await readRgb24(still.path);
+    const seam = samplePixel(rgb, still.width, 540, 960);
+    expect(seam.g).toBeGreaterThan(180);
+    expect(seam.r).toBeLessThan(80);
   });
 });

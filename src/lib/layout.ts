@@ -1,4 +1,4 @@
-import type { SessionCaption, SessionLayout } from "./tools/types.js";
+import type { CropLayout, SessionCaption, SessionLayout } from "./tools/types.js";
 
 export const STACK_CANVAS_WIDTH = 1080;
 export const STACK_CANVAS_HEIGHT = 1920;
@@ -33,4 +33,22 @@ export function layoutCanvasSize(
 
 export function captionsCovering(captions: SessionCaption[] | undefined, tSec: number): SessionCaption[] {
   return (captions ?? []).filter((item) => tSec >= item.startSec && tSec < item.endSec);
+}
+
+/** Cover-crop a pane from a caller crop rect (fractions 0–1, or pixel origin). */
+export function cropSourceImgStyle(crop: CropLayout): string {
+  const { x, y, width, height } = crop;
+  const frac = width <= 1 && height <= 1;
+  const originX = frac ? `${(x / width) * 100}` : String(x);
+  const originY = frac ? `${(y / height) * 100}` : String(y);
+  const scale = frac ? 1 / width : 1;
+  return `width:"100%",height:"100%",objectFit:"cover",transformOrigin:"${originX}% ${originY}%",transform:"scale(${scale})"`;
+}
+
+export const STACK_DIVIDER_PX = 4;
+
+/** Horizontal seam line under stack. Color is caller palette.divider only. */
+export function stackDividerTop(layout: SessionLayout | undefined, height: number, linePx = STACK_DIVIDER_PX): number {
+  const seam = stackFractions(layout).graphics;
+  return Math.max(0, Math.round(seam * height - linePx / 2));
 }

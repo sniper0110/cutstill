@@ -154,4 +154,35 @@ describe("timeline tools + mapped render", () => {
     expect(still.fileSec).toBeCloseTo(0.8, 1);
     expect(still.fileSec).toBeLessThan(still.tSec);
   });
+
+  it("rejects timeline.cut when endSec is past the source duration", async () => {
+    const root = await tempSessionsRoot("cutstill-cut-eof-");
+    const { sessionId, sourcePath } = await createSession(root);
+    const probed = await probeMediaMetadata(sourcePath);
+    expect(probed.durationSeconds).toBeGreaterThan(2);
+    expect(probed.durationSeconds).toBeLessThan(4);
+
+    await expect(
+      invokeTool(
+        "timeline.cut",
+        { sessionId, startSec: 0.5, endSec: probed.durationSeconds + 10 },
+        ctxFor(root),
+      ),
+    ).rejects.toMatchObject({
+      code: "INVALID_INPUT",
+      message: expect.stringMatching(/duration|source/i),
+    });
+
+    const snap = (await invokeTool("session.get", { sessionId }, ctxFor(root))) as {
+      timeline: { removes: unknown[] };
+    };
+    expect(snap.timeline.removes).toEqual([]);
+
+    const ok = (await invokeTool(
+      "timeline.cut",
+      { sessionId, startSec: 1, endSec: 2 },
+      ctxFor(root),
+    )) as { timeline: { removes: Array<{ startSec: number; endSec: number }> } };
+    expect(ok.timeline.removes).toEqual([{ startSec: 1, endSec: 2 }]);
+  });
 });

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { stackFractions } from "../layout.js";
+import { cropSourceImgStyle, STACK_DIVIDER_PX, stackDividerTop, stackFractions } from "../layout.js";
 import type { SessionComp, SessionLayout } from "../tools/types.js";
 import type { CompSequence } from "./sequences.js";
 
@@ -48,24 +48,15 @@ export function layoutStyle(layout?: SessionLayout): {
       sourceWrap: `position:"relative",width:"100%",height:"${pct(talent)}",flexShrink:0,overflow:"hidden"`,
       overlayWrap: `position:"relative",width:"100%",height:"${pct(graphics)}",flexShrink:0,overflow:"hidden"`,
       divider: "",
-      sourceImg: `width:"100%",height:"100%",objectFit:"cover"`,
+      sourceImg: layout?.crop ? cropSourceImgStyle(layout.crop) : `width:"100%",height:"100%",objectFit:"cover"`,
     };
   }
   if (mode === "crop" && layout?.crop) {
-    const crop = layout.crop;
-    const frac = crop.width <= 1 && crop.height <= 1;
-    const x = frac ? crop.x : crop.x;
-    const y = frac ? crop.y : crop.y;
-    const w = frac ? crop.width : crop.width;
-    const h = frac ? crop.height : crop.height;
-    const originX = frac ? `${(x / w) * 100}` : String(x);
-    const originY = frac ? `${(y / h) * 100}` : String(y);
-    const scale = frac ? 1 / w : 1;
     return {
       sourceWrap: `position:"absolute",inset:0`,
       overlayWrap: `position:"absolute",inset:0`,
       divider: "",
-      sourceImg: `width:"100%",height:"100%",objectFit:"cover",transformOrigin:"${originX}% ${originY}%",transform:"scale(${scale})"`,
+      sourceImg: cropSourceImgStyle(layout.crop),
     };
   }
   return {
@@ -74,6 +65,13 @@ export function layoutStyle(layout?: SessionLayout): {
     divider: "",
     sourceImg: `width:"100%",height:"100%",objectFit:"cover"`,
   };
+}
+
+function stackSeamDivider(input: { layout?: SessionLayout; height: number }): string {
+  const color = input.layout?.palette?.divider;
+  if (!color || (input.layout?.mode ?? "full") !== "stack") return "";
+  const top = stackDividerTop(input.layout, input.height, STACK_DIVIDER_PX);
+  return `      <div style={{ position: "absolute", left: 0, right: 0, top: ${top}, height: ${STACK_DIVIDER_PX}, background: ${JSON.stringify(color)}, zIndex: 4 }} />`;
 }
 
 function captionBand(input: {
@@ -115,6 +113,7 @@ function frameShell(input: {
   const style = layoutStyle(input.layout);
   const mode = input.layout?.mode ?? "full";
   const band = captionBand({ layout: input.layout, height: input.height, captions: input.captions });
+  const seam = stackSeamDivider({ layout: input.layout, height: input.height });
   if (mode === "split") {
     return `    <AbsoluteFill style={{ backgroundColor: "transparent", flexDirection: "row" }}>
       <div style={{ ${style.sourceWrap} }}>
@@ -136,6 +135,7 @@ ${input.layers}
       <div style={{ ${style.sourceWrap} }}>
         ${input.source}
       </div>
+${seam}
 ${band}
     </AbsoluteFill>`;
   }
