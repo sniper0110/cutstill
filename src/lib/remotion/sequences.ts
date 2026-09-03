@@ -1,5 +1,5 @@
 import { keptInWindow, mapSourceTime, type KeptRange } from "../time.js";
-import type { SessionComp } from "../tools/types.js";
+import type { SessionCaption, SessionComp } from "../tools/types.js";
 
 export interface CompSequence {
   id: string;
@@ -63,6 +63,36 @@ export function compositionDurationFrames(outputFrames: number, sequences: CompS
     max = Math.max(max, Math.ceil(end));
   }
   return max;
+}
+
+export function planCaptionCues(input: {
+  captions: SessionCaption[];
+  startSec: number;
+  endSec: number;
+  fps: number;
+  ranges: KeptRange[];
+}): Array<{ text: string; from: number; duration: number }> {
+  const comps: SessionComp[] = input.captions.map((caption, index) => ({
+    id: `cap-${index}`,
+    engine: "remotion",
+    sourcePath: "",
+    window: { startSec: caption.startSec, endSec: caption.endSec },
+    props: {},
+  }));
+  return planCompSequences({
+    comps,
+    startSec: input.startSec,
+    endSec: input.endSec,
+    fps: input.fps,
+    ranges: input.ranges,
+  }).map((seq) => {
+    const index = Number(seq.id.slice(4));
+    return {
+      text: input.captions[index]?.text ?? "",
+      from: seq.from,
+      duration: seq.duration,
+    };
+  });
 }
 
 /** Single-frame still at a source second; reuses window/publish sequence planning. */

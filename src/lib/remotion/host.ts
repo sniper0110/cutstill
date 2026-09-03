@@ -1,7 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stackFractions } from "../layout.js";
 import type { SessionComp, SessionLayout } from "../tools/types.js";
 import type { CompSequence } from "./sequences.js";
+
+export interface CaptionCue {
+  text: string;
+  from?: number;
+  duration?: number;
+}
 
 export function layoutStyle(layout?: SessionLayout): {
   sourceWrap: string;
@@ -31,6 +38,19 @@ export function layoutStyle(layout?: SessionLayout): {
       sourceImg: `width:"100%",height:"100%",objectFit:"cover"`,
     };
   }
+  if (mode === "stack") {
+    const { graphics, talent } = stackFractions(layout);
+    const pct = (n: number) => {
+      const value = n * 100;
+      return Number.isInteger(value) ? `${value}%` : `${Number(value.toFixed(4))}%`;
+    };
+    return {
+      sourceWrap: `position:"relative",width:"100%",height:"${pct(talent)}",flexShrink:0,overflow:"hidden"`,
+      overlayWrap: `position:"relative",width:"100%",height:"${pct(graphics)}",flexShrink:0,overflow:"hidden"`,
+      divider: "",
+      sourceImg: `width:"100%",height:"100%",objectFit:"cover"`,
+    };
+  }
   if (mode === "crop" && layout?.crop) {
     const crop = layout.crop;
     const frac = crop.width <= 1 && crop.height <= 1;
@@ -56,14 +76,46 @@ export function layoutStyle(layout?: SessionLayout): {
   };
 }
 
+function captionBand(input: {
+  layout?: SessionLayout;
+  height: number;
+  captions?: CaptionCue[];
+}): string {
+  const cues = input.captions ?? [];
+  if (cues.length === 0) return "";
+  const stack = (input.layout?.mode ?? "full") === "stack";
+  const seam = stack ? stackFractions(input.layout).graphics : 0.5;
+  const bandH = 64;
+  const top = Math.max(0, Math.round(seam * input.height - bandH / 2));
+  const bg = input.layout?.palette?.captionBand ?? "rgba(0,0,0,0.75)";
+  const fg = input.layout?.palette?.caption ?? "#ffffff";
+  const items = cues
+    .map((cue) => {
+      const strip = `<div style={{ width: "100%", height: ${bandH}, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 28px", background: ${JSON.stringify(bg)}, color: ${JSON.stringify(fg)}, fontSize: 36, fontWeight: 700, textAlign: "center" }}>${JSON.stringify(cue.text)}</div>`;
+      if (cue.from != null && cue.duration != null) {
+        return `        <Sequence from={${cue.from}} durationInFrames={${Math.max(1, cue.duration)}}>
+          ${strip}
+        </Sequence>`;
+      }
+      return `        ${strip}`;
+    })
+    .join("\n");
+  return `      <div style={{ position: "absolute", left: 0, right: 0, top: ${top}, zIndex: 5 }}>
+${items}
+      </div>`;
+}
+
 function frameShell(input: {
   layout?: SessionLayout;
   source: string;
   layers: string;
+  height: number;
+  captions?: CaptionCue[];
 }): string {
   const style = layoutStyle(input.layout);
-  const split = (input.layout?.mode ?? "full") === "split";
-  if (split) {
+  const mode = input.layout?.mode ?? "full";
+  const band = captionBand({ layout: input.layout, height: input.height, captions: input.captions });
+  if (mode === "split") {
     return `    <AbsoluteFill style={{ backgroundColor: "transparent", flexDirection: "row" }}>
       <div style={{ ${style.sourceWrap} }}>
         ${input.source}
@@ -72,6 +124,19 @@ function frameShell(input: {
       <div style={{ ${style.overlayWrap} }}>
 ${input.layers}
       </div>
+${band}
+    </AbsoluteFill>`;
+  }
+  if (mode === "stack") {
+    const canvas = input.layout?.palette?.canvas ?? "#0a0a0a";
+    return `    <AbsoluteFill style={{ backgroundColor: ${JSON.stringify(canvas)}, flexDirection: "column" }}>
+      <div style={{ ${style.overlayWrap} }}>
+${input.layers}
+      </div>
+      <div style={{ ${style.sourceWrap} }}>
+        ${input.source}
+      </div>
+${band}
     </AbsoluteFill>`;
   }
   return `    <AbsoluteFill style={{ backgroundColor: "transparent" }}>
@@ -81,6 +146,7 @@ ${input.layers}
       <div style={{ ${style.overlayWrap} }}>
 ${input.layers}
       </div>
+${band}
     </AbsoluteFill>`;
 }
 
@@ -92,6 +158,7 @@ export function stillHostSource(input: {
   tSec: number;
   sequences?: CompSequence[];
   layout?: SessionLayout;
+  captions?: CaptionCue[];
 }): string {
   const imports = input.active
     .map((comp, index) => `import UserComp${index} from "../comps/${comp.id}";`)
@@ -119,7 +186,13 @@ export function stillHostSource(input: {
     })
     .join("\n");
   const source = `<Img src={staticFile("frame.png")} style={{ ${layoutStyle(input.layout).sourceImg} }} />`;
-  const body = frameShell({ layout: input.layout, source, layers });
+  const body = frameShell({
+    layout: input.layout,
+    source,
+    layers,
+    height: input.height,
+    captions: input.captions,
+  });
 
   return `import React from "react";
 import { AbsoluteFill, Composition, Img, Sequence, staticFile } from "remotion";
@@ -162,6 +235,7 @@ export function videoHostSource(input: {
   sourceStartSec: number;
   sequences?: CompSequence[];
   layout?: SessionLayout;
+  captions?: CaptionCue[];
 }): string {
   const imports = input.active
     .map((comp, index) => `import UserComp${index} from "../comps/${comp.id}";`)
@@ -199,7 +273,13 @@ export function videoHostSource(input: {
     })
     .join("\n");
   const source = `<OffthreadVideo src={staticFile("source.mp4")} style={{ ${layoutStyle(input.layout).sourceImg} }} muted />`;
-  const body = frameShell({ layout: input.layout, source, layers });
+  const body = frameShell({
+    layout: input.layout,
+    source,
+    layers,
+    height: input.height,
+    captions: input.captions,
+  });
 
   return `import React from "react";
 import { AbsoluteFill, Composition, Freeze, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from "remotion";
@@ -250,6 +330,7 @@ export async function writeRemotionHost(
     tSec: number;
     sequences?: CompSequence[];
     layout?: SessionLayout;
+    captions?: CaptionCue[];
   },
 ): Promise<void> {
   await mkdir(remotionDir, { recursive: true });
@@ -272,6 +353,7 @@ export async function writeRemotionVideoHost(
     sourceStartSec: number;
     sequences?: CompSequence[];
     layout?: SessionLayout;
+    captions?: CaptionCue[];
   },
 ): Promise<void> {
   await mkdir(remotionDir, { recursive: true });

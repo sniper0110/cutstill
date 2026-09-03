@@ -44,8 +44,10 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(blob).not.toMatch(/0\.25|0\.75|25\s*\/\s*75/);
     expect(blob.toLowerCase()).not.toContain("pycad");
     expect(blob.toLowerCase()).not.toContain("dental");
+    expect(spec?.input.properties?.mode?.enum).toEqual(["split", "full", "crop", "stack"]);
     expect(spec?.input.properties?.split?.properties?.talent?.const).toBeUndefined();
     expect(spec?.input.properties?.split?.properties?.talent?.enum).toBeUndefined();
+    expect(spec?.input.properties?.stack?.properties?.graphics?.const).toBeUndefined();
     expect(JSON.stringify(catalog).toLowerCase()).not.toContain("encode.preview");
   });
 

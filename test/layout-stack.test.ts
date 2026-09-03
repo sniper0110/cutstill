@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import { layoutCanvasSize, STACK_CANVAS_HEIGHT, STACK_CANVAS_WIDTH, stackFractions } from "../src/lib/layout.js";
+import { analyzeRgb, readRgb24, samplePixel } from "../src/lib/png.js";
+import { extractSourceFrame } from "../src/lib/remotion/engine.js";
+import { stillHostSource } from "../src/lib/remotion/host.js";
+import { getToolsCatalog, invokeTool } from "../src/lib/tools/index.js";
+import { createSession, ctxFor, tempSessionsRoot } from "./helpers.js";
+
+describe("layout canvas + stack fractions", () => {
+  it("defaults stack to 1080×1920 and uses caller fractions", () => {
+    const stack = { mode: "stack" as const, stack: { graphics: 0.4, talent: 0.6 } };
+    expect(layoutCanvasSize(stack, { width: 640, height: 360 })).toEqual({
+      width: STACK_CANVAS_WIDTH,
+      height: STACK_CANVAS_HEIGHT,
+    });
+    expect(stackFractions(stack)).toEqual({ graphics: 0.4, talent: 0.6 });
+    expect(layoutCanvasSize({ mode: "full" }, { width: 640, height: 360 })).toEqual({
+      width: 640,
+      height: 360,
+    });
+    expect(
+      layoutCanvasSize({ mode: "stack", width: 720, height: 1280 }, { width: 640, height: 360 }),
+    ).toEqual({ width: 720, height: 1280 });
+  });
+
+  it("stack host is a column with caller percents and no baked 25/75", () => {
+    const host = stillHostSource({
+      active: [],
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      tSec: 0.5,
+      layout: { mode: "stack", stack: { graphics: 0.4, talent: 0.6 } },
+    });
+    expect(host).toMatch(/flexDirection: "column"/);
+    expect(host).toMatch(/40%/);
+    expect(host).toMatch(/60%/);
+    expect(host).toMatch(/objectFit:"cover"/);
+    expect(host).not.toMatch(/25%/);
+    expect(host).not.toMatch(/75%/);
+    expect(host).toContain("width={1080}");
+    expect(host).toContain("height={1920}");
+  });
+});
+
+describe("timeline.layout stack + captions", () => {
+  it("accepts stack mode and persists fractions and captions", async () => {
+    const root = await tempSessionsRoot("cutstill-stack-api-");
+    const { sessionId } = await createSession(root);
+    const snap = (await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.45, talent: 0.55 },
+        captions: [{ text: "sample line", startSec: 0.2, endSec: 1.8 }],
+        palette: { captionBand: "#00ff66", caption: "#111111" },
+      },
+      ctxFor(root),
+    )) as {
+      timeline: {
+        layout: {
+          mode: string;
+          stack?: { graphics: number; talent: number };
+          captions?: Array<{ text: string }>;
+        };
+      };
+    };
+    expect(snap.timeline.layout.mode).toBe("stack");
+    expect(snap.timeline.layout.stack).toEqual({ graphics: 0.45, talent: 0.55 });
+    expect(snap.timeline.layout.captions).toEqual([{ text: "sample line", startSec: 0.2, endSec: 1.8 }]);
+    const catalog = JSON.stringify(getToolsCatalog());
+    expect(catalog).toContain('"stack"');
+    expect(catalog.toLowerCase()).not.toContain("pycad");
+    expect(catalog).not.toMatch(/0\.25|0\.75|25\s*\/\s*75/);
+  });
+
+  it("stack still is 1080×1920 and the lower pane shows talent without a full black canvas", async () => {
+    const root = await tempSessionsRoot("cutstill-stack-talent-");
+    const { sessionId } = await createSession(root);
+    await invokeTool(
+      "timeline.layout",
+      { sessionId, mode: "stack", stack: { graphics: 0.5, talent: 0.5 } },
+      ctxFor(root),
+    );
+    const still = (await invokeTool("render.still", { sessionId, tSec: 0.5 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+      height: number;
+      compsActive: string[];
+    };
+    expect(still.width).toBe(1080);
+    expect(still.height).toBe(1920);
+    expect(still.compsActive).toEqual([]);
+    const rgb = await readRgb24(still.path);
+    const lower = samplePixel(rgb, still.width, 540, 1440);
+    expect(lower.r + lower.g + lower.b).toBeGreaterThan(30);
+    expect(analyzeRgb(rgb).uniqueColors).toBeGreaterThan(16);
+    const upper = samplePixel(rgb, still.width, 540, 200);
+    expect(Math.abs(upper.r - lower.r) + Math.abs(upper.g - lower.g) + Math.abs(upper.b - lower.b)).toBeGreaterThan(
+      20,
+    );
+  });
+
+  it("draws a timed caption on the stack seam for still and window", async () => {
+    const root = await tempSessionsRoot("cutstill-stack-cap-");
+    const { sessionId } = await createSession(root);
+    await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        captions: [{ text: "midline sample", startSec: 0.3, endSec: 2.0 }],
+        palette: { captionBand: "#00ff66", caption: "#111111" },
+      },
+      ctxFor(root),
+    );
+    const still = (await invokeTool("render.still", { sessionId, tSec: 0.8 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const stillRgb = await readRgb24(still.path);
+    const seam = samplePixel(stillRgb, still.width, 540, 960);
+    expect(seam.g).toBeGreaterThan(180);
+    expect(seam.r).toBeLessThan(80);
+
+    const outside = (await invokeTool("render.still", { sessionId, tSec: 2.4 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const outsideRgb = await readRgb24(outside.path);
+    const laterSeam = samplePixel(outsideRgb, outside.width, 540, 960);
+    expect(laterSeam.g).toBeLessThan(160);
+
+    const win = (await invokeTool(
+      "render.window",
+      { sessionId, startSec: 0.4, endSec: 1.5 },
+      ctxFor(root),
+    )) as { path: string; width: number; height: number };
+    expect(win.width).toBe(1080);
+    expect(win.height).toBe(1920);
+    const frame = win.path.replace(/\.mp4$/, "-cap.png");
+    await extractSourceFrame({ sourcePath: win.path, fileSec: 0.3, dest: frame });
+    const winRgb = await readRgb24(frame);
+    const winSeam = samplePixel(winRgb, win.width, 540, 960);
+    expect(winSeam.g).toBeGreaterThan(160);
+  });
+});

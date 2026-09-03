@@ -270,14 +270,14 @@ export const TOOL_SPECS: ToolSpec[] = [
   ),
   tool(
     "timeline.layout",
-    "Set canvas layout: caller-supplied split, crop, palette, and divider. Split fractions are caller values; nothing is baked in.",
+    "Set canvas layout. split is landscape side-by-side; stack is portrait shorts (upper graphics, lower talking-head crop, default 1080×1920). Fractions and captions are caller-supplied.",
     {
       type: "object",
       required: ["sessionId", "mode"],
       additionalProperties: false,
       properties: {
         sessionId: SESSION_ID,
-        mode: { type: "string", enum: ["split", "full", "crop"] },
+        mode: { type: "string", enum: ["split", "full", "crop", "stack"] },
         split: {
           type: "object",
           additionalProperties: false,
@@ -285,6 +285,14 @@ export const TOOL_SPECS: ToolSpec[] = [
             talent: { type: "number", description: "Primary pane fraction 0–1 (caller-supplied)" },
             graphics: { type: "number", description: "Secondary pane fraction 0–1 (caller-supplied)" },
             dividerPx: { type: "number" },
+          },
+        },
+        stack: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            graphics: { type: "number", description: "Upper pane fraction 0–1 (caller-supplied)" },
+            talent: { type: "number", description: "Lower talking-head pane fraction 0–1 (caller-supplied)" },
           },
         },
         crop: {
@@ -297,10 +305,26 @@ export const TOOL_SPECS: ToolSpec[] = [
             height: { type: "number" },
           },
         },
+        width: { type: "number", description: "Optional canvas width. Stack defaults to 1080 when omitted." },
+        height: { type: "number", description: "Optional canvas height. Stack defaults to 1920 when omitted." },
+        captions: {
+          type: "array",
+          description: "Optional midline caption cues in source seconds. Replaces the session caption list when passed.",
+          items: {
+            type: "object",
+            required: ["text", "startSec", "endSec"],
+            additionalProperties: false,
+            properties: {
+              text: { type: "string" },
+              startSec: SOURCE_SEC,
+              endSec: SOURCE_SEC,
+            },
+          },
+        },
         palette: {
           type: "object",
           additionalProperties: true,
-          description: "Session palette. Caller-supplied; no baked brand.",
+          description: "Session palette. Caller-supplied; no baked brand. caption / captionBand style the seam strip.",
         },
       },
     },

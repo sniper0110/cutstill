@@ -22,7 +22,7 @@ export interface SourceRange {
   endSec: number;
 }
 
-export type LayoutMode = "split" | "full" | "crop";
+export type LayoutMode = "split" | "full" | "crop" | "stack";
 
 export interface SpeedWindow extends SourceRange {
   rate: number;
@@ -41,11 +41,28 @@ export interface CropLayout {
   height: number;
 }
 
+/** Portrait shorts: upper graphics pane, lower talking-head crop. Fractions are caller-supplied. */
+export interface StackLayout {
+  graphics: number;
+  talent: number;
+}
+
+export interface SessionCaption {
+  text: string;
+  startSec: number;
+  endSec: number;
+}
+
 export interface SessionLayout {
   mode: LayoutMode;
   split?: SplitLayout;
+  stack?: StackLayout;
   crop?: CropLayout;
   palette?: Record<string, string>;
+  captions?: SessionCaption[];
+  /** Optional override. Stack defaults to 1080×1920 when omitted. */
+  width?: number;
+  height?: number;
 }
 
 export interface SessionTimeline {
@@ -76,10 +93,19 @@ export function normalizeTimeline(raw: Partial<SessionTimeline> | undefined): Se
     speed: typeof raw.speed === "number" && raw.speed > 0 ? raw.speed : 1,
     speedWindows: Array.isArray(raw.speedWindows) ? raw.speedWindows : [],
     layout: {
-      mode: raw.layout?.mode === "split" || raw.layout?.mode === "crop" ? raw.layout.mode : "full",
+      mode:
+        raw.layout?.mode === "split" ||
+        raw.layout?.mode === "crop" ||
+        raw.layout?.mode === "stack"
+          ? raw.layout.mode
+          : "full",
       split: raw.layout?.split,
+      stack: raw.layout?.stack,
       crop: raw.layout?.crop,
       palette: raw.layout?.palette ?? {},
+      captions: Array.isArray(raw.layout?.captions) ? raw.layout.captions : [],
+      width: typeof raw.layout?.width === "number" && raw.layout.width > 0 ? raw.layout.width : undefined,
+      height: typeof raw.layout?.height === "number" && raw.layout.height > 0 ? raw.layout.height : undefined,
     },
   };
 }

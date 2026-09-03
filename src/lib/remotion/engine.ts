@@ -7,8 +7,14 @@ import { computeKeptRanges, isIdentityTimeline, keptInWindow, outputDuration } f
 import { ToolError } from "../tools/errors.js";
 import { sessionPaths } from "../tools/store.js";
 import { defaultTimeline, type SessionComp, type ToolSession } from "../tools/types.js";
+import { captionsCovering } from "../layout.js";
 import { writeRemotionHost, writeRemotionVideoHost } from "./host.js";
-import { compositionDurationFrames, planCompSequences, planStillCompSequences } from "./sequences.js";
+import {
+  compositionDurationFrames,
+  planCaptionCues,
+  planCompSequences,
+  planStillCompSequences,
+} from "./sequences.js";
 
 export const WINDOW_MAX_SEC = 12;
 export const PUBLISH_MAX_WIDTH = 1920;
@@ -151,6 +157,9 @@ export async function renderSessionStill(input: {
     tSec: input.tSec,
     sequences,
     layout: timeline.layout,
+    captions: captionsCovering(timeline.layout.captions, input.tSec).map((item) => ({
+      text: item.text,
+    })),
   });
 
   const { bundle } = await import("@remotion/bundler");
@@ -377,6 +386,13 @@ export async function renderSessionMedia(input: {
     sourceStartSec: input.startSec,
     sequences,
     layout: timeline.layout,
+    captions: planCaptionCues({
+      captions: timeline.layout.captions ?? [],
+      startSec: input.startSec,
+      endSec: input.endSec,
+      fps,
+      ranges,
+    }),
   });
 
   const { bundle } = await import("@remotion/bundler");

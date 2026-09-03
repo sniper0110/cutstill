@@ -11,6 +11,7 @@ export type {
   SessionLayout,
 } from "./types.js";
 export { defaultTimeline, normalizeTimeline } from "./types.js";
+export type { SessionCaption, StackLayout } from "./types.js";
 export { getToolsCatalog, listToolNames, isV1ToolName } from "./catalog.js";
 export { invokeTool, defaultToolsContext } from "./invoke.js";
 export { handleMcpRequest, runMcpStdio, mcpContentForResult } from "./mcp.js";

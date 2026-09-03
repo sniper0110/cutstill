@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { layoutCanvasSize } from "../layout.js";
 import { probeMediaMetadata } from "../probe.js";
 import {
   clampWindow,
@@ -30,7 +31,7 @@ import {
   resolveSessionsRoot,
   sessionPaths,
 } from "./store.js";
-import type { SessionComp, SessionLayout, ToolSession, ToolsContext } from "./types.js";
+import type { SessionCaption, SessionComp, SessionLayout, ToolSession, ToolsContext } from "./types.js";
 
 function ctxRoot(ctx: ToolsContext): string {
   return resolveSessionsRoot(ctx);
@@ -152,13 +153,14 @@ export async function renderStill(input: unknown, ctx: ToolsContext) {
   const probed = await probeMediaMetadata(session.sourcePath);
   const mapped = mapSessionTime(tSec, probed.durationSeconds, session.timeline);
   const dest = path.join(sessionPaths(ctxRoot(ctx), session.sessionId).stills, stillFileName(mapped.tSec));
+  const size = layoutCanvasSize(session.timeline.layout, probed);
   const compsActive = await renderSessionStill({
     session,
     sessionsRoot: ctxRoot(ctx),
     tSec: mapped.tSec,
     fileSec: mapped.fileSec,
-    width: probed.width,
-    height: probed.height,
+    width: size.width,
+    height: size.height,
     dest,
   });
   await mutateSession(ctx, session.sessionId, (current) => {
@@ -170,8 +172,8 @@ export async function renderStill(input: unknown, ctx: ToolsContext) {
     tSec: mapped.tSec,
     fileSec: mapped.fileSec,
     compsActive,
-    width: probed.width,
-    height: probed.height,
+    width: size.width,
+    height: size.height,
   };
 }
 
@@ -190,13 +192,14 @@ export async function renderWindow(input: unknown, ctx: ToolsContext) {
   const paths = sessionPaths(ctxRoot(ctx), session.sessionId);
   const dest = path.join(paths.windows, `${stem}.mp4`);
   const posterPath = path.join(paths.windows, `${stem}-poster.png`);
+  const size = layoutCanvasSize(session.timeline.layout, probed);
   const rendered = await renderSessionMedia({
     session,
     sessionsRoot: ctxRoot(ctx),
     startSec: range.startSec,
     endSec: range.endSec,
-    width: probed.width,
-    height: probed.height,
+    width: size.width,
+    height: size.height,
     dest,
     posterPath,
     hasAudio: probed.hasAudio,
@@ -216,8 +219,8 @@ export async function renderWindow(input: unknown, ctx: ToolsContext) {
     endSec: end.tSec,
     durationSec: rendered.durationSec,
     compsActive: rendered.compsActive,
-    width: probed.width,
-    height: probed.height,
+    width: size.width,
+    height: size.height,
     hasAudio: rendered.hasAudio,
   };
 }
@@ -226,7 +229,9 @@ export async function renderPublish(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const session = await load(ctx, requireString(rec.sessionId, "sessionId"));
   const probed = await probeMediaMetadata(session.sourcePath);
-  const size = publishSize(probed.width, probed.height);
+  const laid = layoutCanvasSize(session.timeline.layout, probed);
+  const size =
+    session.timeline.layout.mode === "stack" ? laid : publishSize(laid.width, laid.height);
   const paths = sessionPaths(ctxRoot(ctx), session.sessionId);
   const dest = optionalString(rec.outPath) ? path.resolve(optionalString(rec.outPath)!) : paths.publish;
   const posterPath = dest.replace(/\.mp4$/i, "") + "-poster.png";
@@ -312,8 +317,8 @@ export async function timelineLayout(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const sessionId = requireString(rec.sessionId, "sessionId");
   const mode = requireString(rec.mode, "mode");
-  if (mode !== "split" && mode !== "full" && mode !== "crop") {
-    throw new ToolError("INVALID_INPUT", "mode must be split, full, or crop");
+  if (mode !== "split" && mode !== "full" && mode !== "crop" && mode !== "stack") {
+    throw new ToolError("INVALID_INPUT", "mode must be split, full, crop, or stack");
   }
   const layout: SessionLayout = { mode };
   if (rec.split && typeof rec.split === "object") {
@@ -331,6 +336,17 @@ export async function timelineLayout(input: unknown, ctx: ToolsContext) {
       dividerPx: optionalNumber(split.dividerPx),
     };
   }
+  if (rec.stack && typeof rec.stack === "object") {
+    const stack = rec.stack as Record<string, unknown>;
+    const talent = optionalNumber(stack.talent);
+    const graphics = optionalNumber(stack.graphics);
+    if (talent == null && graphics == null) {
+      throw new ToolError("INVALID_INPUT", "stack requires talent and/or graphics");
+    }
+    const upper = graphics ?? (talent != null ? 1 - talent : 0.5);
+    const lower = talent ?? 1 - upper;
+    layout.stack = { graphics: upper, talent: lower };
+  }
   if (rec.crop && typeof rec.crop === "object") {
     const crop = rec.crop as Record<string, unknown>;
     layout.crop = {
@@ -343,12 +359,36 @@ export async function timelineLayout(input: unknown, ctx: ToolsContext) {
   if (rec.palette && typeof rec.palette === "object") {
     layout.palette = rec.palette as SessionLayout["palette"];
   }
+  const width = optionalNumber(rec.width);
+  const height = optionalNumber(rec.height);
+  if (width != null) layout.width = width;
+  if (height != null) layout.height = height;
+  if (Array.isArray(rec.captions)) {
+    layout.captions = rec.captions.map((raw, index) => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new ToolError("INVALID_INPUT", `captions[${index}] must be an object`);
+      }
+      const item = raw as Record<string, unknown>;
+      const text = requireString(item.text, `captions[${index}].text`);
+      const startSec = requireNumber(item.startSec, `captions[${index}].startSec`);
+      const endSec = requireNumber(item.endSec, `captions[${index}].endSec`);
+      if (endSec <= startSec) {
+        throw new ToolError("INVALID_INPUT", `captions[${index}].endSec must be greater than startSec`);
+      }
+      return { text, startSec, endSec } satisfies SessionCaption;
+    });
+  }
   const session = await mutateSession(ctx, sessionId, (current) => {
     current.timeline.layout = {
       ...current.timeline.layout,
       ...layout,
       split: layout.split ?? current.timeline.layout.split,
+      stack:
+        layout.stack ??
+        current.timeline.layout.stack ??
+        (mode === "stack" ? { graphics: 0.5, talent: 0.5 } : undefined),
       crop: layout.crop ?? current.timeline.layout.crop,
+      captions: layout.captions ?? current.timeline.layout.captions,
       palette: { ...current.timeline.layout.palette, ...layout.palette },
     };
     current.timeline.layout.mode = mode;
