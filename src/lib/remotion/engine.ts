@@ -8,7 +8,7 @@ import { ToolError } from "../tools/errors.js";
 import { sessionPaths } from "../tools/store.js";
 import { defaultTimeline, type SessionComp, type ToolSession } from "../tools/types.js";
 import { writeRemotionHost, writeRemotionVideoHost } from "./host.js";
-import { planCompSequences } from "./sequences.js";
+import { planCompSequences, planStillCompSequences } from "./sequences.js";
 
 export const WINDOW_MAX_SEC = 12;
 export const PUBLISH_MAX_WIDTH = 1920;
@@ -132,13 +132,25 @@ export async function renderSessionStill(input: {
     dest: framePath,
   });
 
+  const probed = await probeMediaMetadata(input.session.sourcePath);
+  const timeline = input.session.timeline ?? defaultTimeline();
+  const ranges = computeKeptRanges(probed.durationSeconds, timeline);
+  const fps = 30;
   const active = compsCovering(input.session.comps, input.tSec);
+  const sequences = planStillCompSequences({
+    comps: active,
+    tSec: input.tSec,
+    fps,
+    ranges,
+  });
   await writeRemotionHost(paths.remotion, {
     active,
     width: input.width,
     height: input.height,
-    fps: 30,
-    layout: (input.session.timeline ?? defaultTimeline()).layout,
+    fps,
+    tSec: input.tSec,
+    sequences,
+    layout: timeline.layout,
   });
 
   const { bundle } = await import("@remotion/bundler");
@@ -154,7 +166,7 @@ export async function renderSessionStill(input: {
   });
 
   const inputProps = {
-    palette: (input.session.timeline ?? defaultTimeline()).layout.palette ?? {},
+    palette: timeline.layout.palette ?? {},
     compProps: Object.fromEntries(active.map((comp) => [comp.id, comp.props])),
   };
 

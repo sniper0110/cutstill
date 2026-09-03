@@ -2,7 +2,11 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { analyzeRgb, isNearSolidPlate, isPngMagic, readRgb24, samplePixel } from "../src/lib/png.js";
 import { handleMcpRequest, invokeTool } from "../src/lib/tools/index.js";
-import { createSession, ctxFor, MARKER_TSX, tempSessionsRoot } from "./helpers.js";
+import { createSession, ctxFor, CLOCK_TSX, clockMarkSampleX, MARKER_TSX, tempSessionsRoot } from "./helpers.js";
+
+function isMark(pixel: { r: number; g: number; b: number }): boolean {
+  return pixel.r > 180 && pixel.g < 80 && pixel.b < 90;
+}
 
 describe("render.still", () => {
   it("writes a real PNG that is not a near-solid plate", async () => {
@@ -58,6 +62,39 @@ describe("render.still", () => {
     expect(pixel.b).toBeLessThan(80);
     const outside = samplePixel(rgb, still.width, 400, 200);
     expect(outside.r).toBeLessThan(180);
+  });
+
+  it("renders useCurrentFrame comps at source-aligned frames for each tSec", async () => {
+    const root = await tempSessionsRoot("cutstill-still-motion-");
+    const { sessionId } = await createSession(root);
+    await invokeTool(
+      "comp.upsert",
+      {
+        sessionId,
+        id: "clock",
+        engine: "remotion",
+        source: CLOCK_TSX,
+        window: { startSec: 0, endSec: 3 },
+      },
+      ctxFor(root),
+    );
+    const early = (await invokeTool("render.still", { sessionId, tSec: 0.2 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const late = (await invokeTool("render.still", { sessionId, tSec: 1.5 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const earlyRgb = await readRgb24(early.path);
+    const lateRgb = await readRgb24(late.path);
+    expect(isMark(samplePixel(earlyRgb, early.width, clockMarkSampleX(0.2), 16))).toBe(true);
+    expect(isMark(samplePixel(earlyRgb, early.width, clockMarkSampleX(1.5), 16))).toBe(false);
+    expect(isMark(samplePixel(lateRgb, late.width, clockMarkSampleX(1.5), 16))).toBe(true);
+    expect(isMark(samplePixel(lateRgb, late.width, clockMarkSampleX(0.2), 16))).toBe(false);
+    expect(samplePixel(earlyRgb, early.width, clockMarkSampleX(0.2), 16)).not.toEqual(
+      samplePixel(lateRgb, late.width, clockMarkSampleX(0.2), 16),
+    );
   });
 
   it("MCP result includes image content, not path-only (AVE path-only still regression)", async () => {

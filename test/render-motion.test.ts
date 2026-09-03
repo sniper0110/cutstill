@@ -4,7 +4,7 @@ import { readRgb24, samplePixel } from "../src/lib/png.js";
 import { extractSourceFrame } from "../src/lib/remotion/engine.js";
 import { invokeTool } from "../src/lib/tools/index.js";
 import { sessionPaths } from "../src/lib/tools/store.js";
-import { CLOCK_TSX, createSession, ctxFor, tempSessionsRoot } from "./helpers.js";
+import { CLOCK_TSX, clockMarkSampleX, createSession, ctxFor, tempSessionsRoot } from "./helpers.js";
 
 function isMark(pixel: { r: number; g: number; b: number }): boolean {
   return pixel.r > 180 && pixel.g < 80 && pixel.b < 90;
@@ -69,7 +69,7 @@ describe("window/publish remotion motion", () => {
     expect(isMark(samplePixel(laterRgb, result.width, 530, 16))).toBe(true);
   });
 
-  it("render.still stays on composition frame 0 even at a late source second", async () => {
+  it("render.still uses source-aligned composition frames at a late source second", async () => {
     const root = await tempSessionsRoot("cutstill-motion-still-");
     const { sessionId } = await createSession(root);
     await upsertClock(sessionId, root);
@@ -78,8 +78,8 @@ describe("window/publish remotion motion", () => {
       width: number;
     };
     const rgb = await readRgb24(still.path);
-    expect(isMark(samplePixel(rgb, still.width, 12, 16))).toBe(true);
-    expect(isMark(samplePixel(rgb, still.width, 396, 16))).toBe(false);
+    expect(isMark(samplePixel(rgb, still.width, clockMarkSampleX(1.9), 16))).toBe(true);
+    expect(isMark(samplePixel(rgb, still.width, clockMarkSampleX(0), 16))).toBe(false);
   });
 
   it("render.publish uses the same animated composition path", async () => {

@@ -51,6 +51,11 @@ export default function Clock() {
 }
 `;
 
+/** Sample x for CLOCK_TSX mark center at a source second (30fps). */
+export function clockMarkSampleX(tSec: number, fps = 30): number {
+  return ((Math.round(tSec * fps) * 7) % 560) + 10;
+}
+
 export const MARKER_TSX = `import React from "react";
 
 export default function Marker(props: { color?: string }) {

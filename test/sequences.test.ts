@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { videoHostSource } from "../src/lib/remotion/host.js";
-import { planCompSequences } from "../src/lib/remotion/sequences.js";
+import { videoHostSource, stillHostSource } from "../src/lib/remotion/host.js";
+import { planCompSequences, planStillCompSequences } from "../src/lib/remotion/sequences.js";
 import type { SessionComp } from "../src/lib/tools/types.js";
 
 const flow: SessionComp = {
@@ -64,6 +64,43 @@ describe("planCompSequences", () => {
   });
 });
 
+describe("planStillCompSequences", () => {
+  it("maps a late source still onto the matching composition frame", () => {
+    const planned = planStillCompSequences({
+      comps: [
+        {
+          ...flow,
+          window: { startSec: 74.55, endSec: 121.18 },
+        },
+      ],
+      tSec: 90,
+      fps: 30,
+      ranges: [{ startSec: 0, endSec: 200, rate: 1 }],
+    });
+    expect(planned).toEqual([
+      {
+        id: "flow",
+        from: 0,
+        duration: 1,
+        trimBefore: Math.round((90 - 74.55) * 30),
+      },
+    ]);
+  });
+
+  it("keeps trimBefore aligned to source seconds after a cut", () => {
+    const planned = planStillCompSequences({
+      comps: [flow],
+      tSec: 2.5,
+      fps: 30,
+      ranges: [
+        { startSec: 0, endSec: 1, rate: 1 },
+        { startSec: 2, endSec: 3, rate: 1 },
+      ],
+    });
+    expect(planned).toEqual([{ id: "flow", from: 0, duration: 1, trimBefore: 75 }]);
+  });
+});
+
 describe("videoHostSource", () => {
   it("passes trimBefore through so useCurrentFrame is not reset to 0", () => {
     const host = videoHostSource({
@@ -81,5 +118,23 @@ describe("videoHostSource", () => {
     expect(host).toMatch(/<Sequence from=\{0\} durationInFrames=\{273\} trimBefore=\{2580\}>/);
     expect(host).toContain('id="VideoHost"');
     expect(host).toContain("durationInFrames={273}");
+  });
+});
+
+describe("stillHostSource", () => {
+  it("passes trimBefore so still renders the source-aligned comp frame", () => {
+    const host = stillHostSource({
+      active: [{ ...flow, window: { startSec: 74.55, endSec: 121.18 } }],
+      width: 640,
+      height: 360,
+      fps: 30,
+      tSec: 90,
+      sequences: [{ id: "flow", from: 0, duration: 1, trimBefore: 464 }],
+    });
+    expect(host).toContain("import { AbsoluteFill, Composition, Img, Sequence, staticFile } from \"remotion\"");
+    expect(host).toContain('staticFile("frame.png")');
+    expect(host).toMatch(/<Sequence from=\{0\} durationInFrames=\{1\} trimBefore=\{464\}>/);
+    expect(host).toContain('id="StillHost"');
+    expect(host).toContain("durationInFrames={1}");
   });
 });

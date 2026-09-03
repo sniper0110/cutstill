@@ -48,3 +48,20 @@ export function planCompSequences(input: {
   }
   return planned;
 }
+
+/** Single-frame still at a source second; reuses window/publish sequence planning. */
+export function planStillCompSequences(input: {
+  comps: SessionComp[];
+  tSec: number;
+  fps: number;
+  ranges: KeptRange[];
+}): CompSequence[] {
+  const tick = 1 / Math.max(1, input.fps);
+  return planCompSequences({
+    comps: input.comps,
+    startSec: input.tSec,
+    endSec: input.tSec + tick,
+    fps: input.fps,
+    ranges: input.ranges,
+  });
+}

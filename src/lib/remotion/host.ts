@@ -89,19 +89,39 @@ export function stillHostSource(input: {
   width: number;
   height: number;
   fps: number;
+  tSec: number;
+  sequences?: CompSequence[];
   layout?: SessionLayout;
 }): string {
   const imports = input.active
     .map((comp, index) => `import UserComp${index} from "../comps/${comp.id}";`)
     .join("\n");
   const layers = input.active
-    .map((comp, index) => `        <UserComp${index} {...(props.compProps?.["${comp.id}"] ?? {})} palette={props.palette} />`)
+    .map((comp, index) => {
+      const mapped = (input.sequences ?? []).filter((item) => item.id === comp.id);
+      const fallback: CompSequence = {
+        id: comp.id,
+        from: 0,
+        duration: 1,
+        trimBefore: Math.max(0, Math.round((input.tSec - comp.window.startSec) * input.fps)),
+      };
+      const items = mapped.length > 0 ? mapped : [fallback];
+      return items
+        .map((item) => {
+          const trim =
+            item.trimBefore > 0 ? ` trimBefore={${Math.round(item.trimBefore)}}` : "";
+          return `        <Sequence from={0} durationInFrames={1}${trim}>
+          <UserComp${index} {...(props.compProps?.["${comp.id}"] ?? {})} palette={props.palette} />
+        </Sequence>`;
+        })
+        .join("\n");
+    })
     .join("\n");
   const source = `<Img src={staticFile("frame.png")} style={{ ${layoutStyle(input.layout).sourceImg} }} />`;
   const body = frameShell({ layout: input.layout, source, layers });
 
   return `import React from "react";
-import { AbsoluteFill, Composition, Img, staticFile } from "remotion";
+import { AbsoluteFill, Composition, Img, Sequence, staticFile } from "remotion";
 
 ${imports}
 
@@ -210,7 +230,15 @@ export const RemotionRoot: React.FC = () => {
 
 export async function writeRemotionHost(
   remotionDir: string,
-  input: { active: SessionComp[]; width: number; height: number; fps: number; layout?: SessionLayout },
+  input: {
+    active: SessionComp[];
+    width: number;
+    height: number;
+    fps: number;
+    tSec: number;
+    sequences?: CompSequence[];
+    layout?: SessionLayout;
+  },
 ): Promise<void> {
   await mkdir(remotionDir, { recursive: true });
   await writeFile(path.join(remotionDir, "StillHost.tsx"), stillHostSource(input), "utf8");

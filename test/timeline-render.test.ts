@@ -120,6 +120,7 @@ describe("timeline tools + mapped render", () => {
       width: 640,
       height: 360,
       fps: 30,
+      tSec: 0,
       layout: snap.timeline.layout,
     });
     expect(host).toMatch(/40%/);
