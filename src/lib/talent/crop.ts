@@ -92,8 +92,9 @@ export function parseTalentTarget(target: unknown): TalentAnchor {
 }
 
 /**
- * Slide the cover-sized window so the talent point sits at the pane anchor.
- * zoom=1 keeps current cover feel; zoom>1 tightens (smaller source window).
+ * Cover-sized window (zoom=1) or tighter (zoom>1). Always the cover aspect —
+ * never a guessed box. zoom=1 keeps cover size and cover Y; only X slides so
+ * the face hits the pane anchor. zoom>1 keeps that aspect and recenters both axes.
  */
 export function cropFromTalentBox(input: {
   box: PixelBox;
@@ -108,7 +109,7 @@ export function cropFromTalentBox(input: {
   const height = clamp(cover.height / zoom, 2, input.source.height);
   const face = boxCenter(input.box);
   let x = face.x - input.anchor.anchorX * width;
-  let y = face.y - input.anchor.anchorY * height;
+  let y = zoom === 1 ? cover.y : face.y - input.anchor.anchorY * height;
   x = clamp(x, 0, Math.max(0, input.source.width - width));
   y = clamp(y, 0, Math.max(0, input.source.height - height));
   const window: PixelBox = { x, y, width, height };

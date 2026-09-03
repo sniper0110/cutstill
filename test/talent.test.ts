@@ -47,6 +47,27 @@ describe("talent crop math", () => {
     expect(framed.crop.x + framed.crop.width).toBeLessThanOrEqual(1.0001);
   });
 
+  it("zoom=1 keeps cover window size and cover Y — only X slides", () => {
+    const source = { width: 1920, height: 1080 };
+    const pane = { width: 1080, height: 960 };
+    const cover = coverWindow(source, pane);
+    const box = { x: 1100, y: 80, width: 220, height: 320 };
+    const framed = cropFromTalentBox({
+      box,
+      source,
+      pane,
+      anchor: { anchorX: 0.5, anchorY: 0.5 },
+      zoom: 1,
+    });
+    expect(framed.window.width).toBeCloseTo(cover.width, 5);
+    expect(framed.window.height).toBeCloseTo(cover.height, 5);
+    expect(framed.window.y).toBeCloseTo(cover.y, 5);
+    expect(framed.window.x).not.toBeCloseTo(cover.x, 1);
+    const faceX = box.x + box.width / 2;
+    const nx = (faceX - framed.window.x) / framed.window.width;
+    expect(nx).toBeCloseTo(0.5, 2);
+  });
+
   it("parses target center and custom anchors", () => {
     expect(parseTalentTarget("center")).toEqual({ anchorX: 0.5, anchorY: 0.5 });
     expect(parseTalentTarget({ anchorX: 0.4, anchorY: 0.35 })).toEqual({ anchorX: 0.4, anchorY: 0.35 });
