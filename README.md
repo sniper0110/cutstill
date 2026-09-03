@@ -28,7 +28,7 @@ CLI cannot inline pixels; it writes the PNG and prints path + metadata. MCP must
 | `timeline.cut` | Remove a source-second range. |
 | `timeline.keep` | Protect a source window: cuts skip it, rate is 1.0× there. The rest of the source remains (not isolate). |
 | `timeline.speed` | Global rate and/or a source-window rate. |
-| `timeline.layout` | Canvas: `split` (landscape side-by-side), `stack` (portrait shorts, default 1080×1920), `full`, `crop`. Caller fractions (`split` / `stack`), optional seam `captions`, palette. No baked 25/75 or brand colors. Default is full-frame until set. |
+| `timeline.layout` | Canvas: `split` (landscape side-by-side), `stack` (portrait shorts, default 1080×1920), `full`, `crop`. Caller fractions (`split` / `stack`), optional seam `captions` (line and/or `words` karaoke), `bandHeight`, `captionFontSize`, palette (`caption` / `captionBand` / `captionActive` / `divider`). No baked 25/75 or brand colors. Default is full-frame until set. |
 
 Not in this slice: ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 
@@ -76,13 +76,23 @@ npx tsx src/cli/cutstill.ts timeline.layout --json '{
   "sessionId":"<id>",
   "mode":"stack",
   "stack":{"graphics":0.5,"talent":0.5},
+  "bandHeight":120,
+  "captionFontSize":48,
   "crop":{"x":0.2,"y":0.1,"width":0.4,"height":0.5},
-  "captions":[{"text":"sample line","startSec":0.3,"endSec":2.0}],
-  "palette":{"captionBand":"#111111","caption":"#ffffff","divider":"#222222"}
+  "captions":[{
+    "text":"one two",
+    "startSec":0.3,
+    "endSec":2.0,
+    "words":[
+      {"text":"one","startSec":0.3,"endSec":0.9},
+      {"text":"two","startSec":0.9,"endSec":2.0}
+    ]
+  }],
+  "palette":{"captionBand":"#111111","caption":"#ffffff","captionActive":"#ffe566","divider":"#222222"}
 }'
 ```
 
-`mode: "stack"` is the shorts canvas: upper graphics pane, lower talking-head **cover crop**, default **1080×1920**. Caller supplies `stack.graphics` / `stack.talent`. Optional `crop` is applied to the **lower talent pane** (same rect as `mode: "crop"`). `captions` sit on the pane seam (`startSec`/`endSec` are source seconds). Palette keys `caption` / `captionBand` style the strip; `divider` draws a seam line between the panes. Then `render.still` / `render.window` use that canvas — no extra size fields required. Empty-pane expand is not in this slice.
+`mode: "stack"` is the shorts canvas: upper graphics pane, lower talking-head **cover crop**, default **1080×1920**. Caller supplies `stack.graphics` / `stack.talent`. Optional `crop` is applied to the **lower talent pane** (same rect as `mode: "crop"`). `captions` sit on the pane seam (`startSec`/`endSec` are source seconds). Optional `words` on a cue are karaoke: the word covering the current source second uses **`palette.captionActive`**; other words use `palette.caption`. `bandHeight` (default 64) is the opaque mid-band height; `captionFontSize` (default 42) is type size. `divider` draws a seam line between the panes. Then `render.still` / `render.window` / `render.publish` use that canvas. Empty-pane expand is not in this slice.
 
 `timeline.cut` ranges must lie within the source duration (`INVALID_INPUT` if `endSec` is past EOF).
 

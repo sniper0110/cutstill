@@ -159,6 +159,7 @@ export async function renderSessionStill(input: {
     layout: timeline.layout,
     captions: captionsCovering(timeline.layout.captions, input.tSec).map((item) => ({
       text: item.text,
+      words: item.words,
     })),
   });
 

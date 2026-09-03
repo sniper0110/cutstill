@@ -71,7 +71,13 @@ export function planCaptionCues(input: {
   endSec: number;
   fps: number;
   ranges: KeptRange[];
-}): Array<{ text: string; from: number; duration: number }> {
+}): Array<{
+  text: string;
+  from: number;
+  duration: number;
+  words?: SessionCaption["words"];
+  sourceStartSec: number;
+}> {
   const comps: SessionComp[] = input.captions.map((caption, index) => ({
     id: `cap-${index}`,
     engine: "remotion",
@@ -87,10 +93,15 @@ export function planCaptionCues(input: {
     ranges: input.ranges,
   }).map((seq) => {
     const index = Number(seq.id.slice(4));
+    const caption = input.captions[index];
+    const sourceStartSec =
+      (caption?.startSec ?? input.startSec) + seq.trimBefore / Math.max(1, input.fps);
     return {
-      text: input.captions[index]?.text ?? "",
+      text: caption?.text ?? "",
       from: seq.from,
       duration: seq.duration,
+      words: caption?.words,
+      sourceStartSec,
     };
   });
 }

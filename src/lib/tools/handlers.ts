@@ -31,7 +31,48 @@ import {
   resolveSessionsRoot,
   sessionPaths,
 } from "./store.js";
-import type { SessionCaption, SessionComp, SessionLayout, ToolSession, ToolsContext } from "./types.js";
+import type { SessionCaption, SessionCaptionWord, SessionComp, SessionLayout, ToolSession, ToolsContext } from "./types.js";
+
+function parseCaptionWord(raw: unknown, path: string): SessionCaptionWord {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ToolError("INVALID_INPUT", `${path} must be an object`);
+  }
+  const item = raw as Record<string, unknown>;
+  const text = requireString(item.text, `${path}.text`);
+  const startSec = requireNumber(item.startSec, `${path}.startSec`);
+  const endSec = requireNumber(item.endSec, `${path}.endSec`);
+  if (endSec <= startSec) {
+    throw new ToolError("INVALID_INPUT", `${path}.endSec must be greater than startSec`);
+  }
+  return { text, startSec, endSec };
+}
+
+function parseCaption(raw: unknown, index: number): SessionCaption {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ToolError("INVALID_INPUT", `captions[${index}] must be an object`);
+  }
+  const item = raw as Record<string, unknown>;
+  const words = Array.isArray(item.words)
+    ? item.words.map((word, wordIndex) => parseCaptionWord(word, `captions[${index}].words[${wordIndex}]`))
+    : undefined;
+  const text =
+    optionalString(item.text) ??
+    (words && words.length > 0 ? words.map((word) => word.text).join(" ") : "");
+  if (!text) {
+    throw new ToolError("INVALID_INPUT", `captions[${index}] needs text or words`);
+  }
+  const startSec =
+    optionalNumber(item.startSec) ?? (words && words.length > 0 ? words[0]!.startSec : undefined);
+  const endSec =
+    optionalNumber(item.endSec) ??
+    (words && words.length > 0 ? words[words.length - 1]!.endSec : undefined);
+  if (startSec == null) throw new ToolError("INVALID_INPUT", `captions[${index}].startSec is required`);
+  if (endSec == null) throw new ToolError("INVALID_INPUT", `captions[${index}].endSec is required`);
+  if (endSec <= startSec) {
+    throw new ToolError("INVALID_INPUT", `captions[${index}].endSec must be greater than startSec`);
+  }
+  return { text, startSec, endSec, ...(words && words.length > 0 ? { words } : {}) };
+}
 
 function ctxRoot(ctx: ToolsContext): string {
   return resolveSessionsRoot(ctx);
@@ -379,20 +420,18 @@ export async function timelineLayout(input: unknown, ctx: ToolsContext) {
   const height = optionalNumber(rec.height);
   if (width != null) layout.width = width;
   if (height != null) layout.height = height;
+  const bandHeight = optionalNumber(rec.bandHeight);
+  const captionFontSize = optionalNumber(rec.captionFontSize);
+  if (bandHeight != null) {
+    if (bandHeight < 8) throw new ToolError("INVALID_INPUT", "bandHeight must be at least 8");
+    layout.bandHeight = bandHeight;
+  }
+  if (captionFontSize != null) {
+    if (captionFontSize < 8) throw new ToolError("INVALID_INPUT", "captionFontSize must be at least 8");
+    layout.captionFontSize = captionFontSize;
+  }
   if (Array.isArray(rec.captions)) {
-    layout.captions = rec.captions.map((raw, index) => {
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-        throw new ToolError("INVALID_INPUT", `captions[${index}] must be an object`);
-      }
-      const item = raw as Record<string, unknown>;
-      const text = requireString(item.text, `captions[${index}].text`);
-      const startSec = requireNumber(item.startSec, `captions[${index}].startSec`);
-      const endSec = requireNumber(item.endSec, `captions[${index}].endSec`);
-      if (endSec <= startSec) {
-        throw new ToolError("INVALID_INPUT", `captions[${index}].endSec must be greater than startSec`);
-      }
-      return { text, startSec, endSec } satisfies SessionCaption;
-    });
+    layout.captions = rec.captions.map((raw, index) => parseCaption(raw, index));
   }
   const session = await mutateSession(ctx, sessionId, (current) => {
     current.timeline.layout = {
@@ -405,6 +444,8 @@ export async function timelineLayout(input: unknown, ctx: ToolsContext) {
         (mode === "stack" ? { graphics: 0.5, talent: 0.5 } : undefined),
       crop: layout.crop ?? current.timeline.layout.crop,
       captions: layout.captions ?? current.timeline.layout.captions,
+      bandHeight: layout.bandHeight ?? current.timeline.layout.bandHeight,
+      captionFontSize: layout.captionFontSize ?? current.timeline.layout.captionFontSize,
       palette: { ...current.timeline.layout.palette, ...layout.palette },
     };
     current.timeline.layout.mode = mode;

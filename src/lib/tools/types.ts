@@ -47,10 +47,17 @@ export interface StackLayout {
   talent: number;
 }
 
+export interface SessionCaptionWord {
+  text: string;
+  startSec: number;
+  endSec: number;
+}
+
 export interface SessionCaption {
   text: string;
   startSec: number;
   endSec: number;
+  words?: SessionCaptionWord[];
 }
 
 export interface SessionLayout {
@@ -60,6 +67,10 @@ export interface SessionLayout {
   crop?: CropLayout;
   palette?: Record<string, string>;
   captions?: SessionCaption[];
+  /** Opaque midline caption band height in px. Default 64. */
+  bandHeight?: number;
+  /** Caption type size in px. Default 42. */
+  captionFontSize?: number;
   /** Optional override. Stack defaults to 1080×1920 when omitted. */
   width?: number;
   height?: number;
@@ -72,6 +83,32 @@ export interface SessionTimeline {
   speed: number;
   speedWindows: SpeedWindow[];
   layout: SessionLayout;
+}
+
+function normalizeCaptionWord(raw: unknown): SessionCaptionWord | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const item = raw as Record<string, unknown>;
+  if (typeof item.text !== "string" || typeof item.startSec !== "number" || typeof item.endSec !== "number") {
+    return null;
+  }
+  if (!(item.endSec > item.startSec)) return null;
+  return { text: item.text, startSec: item.startSec, endSec: item.endSec };
+}
+
+export function normalizeCaption(raw: unknown): SessionCaption {
+  const item = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const words = Array.isArray(item.words)
+    ? item.words.map(normalizeCaptionWord).filter((word): word is SessionCaptionWord => word != null)
+    : undefined;
+  const text =
+    typeof item.text === "string" && item.text
+      ? item.text
+      : (words ?? []).map((word) => word.text).join(" ");
+  const startSec =
+    typeof item.startSec === "number" ? item.startSec : (words?.[0]?.startSec ?? 0);
+  const endSec =
+    typeof item.endSec === "number" ? item.endSec : (words?.[words.length - 1]?.endSec ?? startSec);
+  return { text, startSec, endSec, ...(words && words.length > 0 ? { words } : {}) };
 }
 
 export function defaultTimeline(): SessionTimeline {
@@ -103,7 +140,15 @@ export function normalizeTimeline(raw: Partial<SessionTimeline> | undefined): Se
       stack: raw.layout?.stack,
       crop: raw.layout?.crop,
       palette: raw.layout?.palette ?? {},
-      captions: Array.isArray(raw.layout?.captions) ? raw.layout.captions : [],
+      captions: Array.isArray(raw.layout?.captions) ? raw.layout.captions.map(normalizeCaption) : [],
+      bandHeight:
+        typeof raw.layout?.bandHeight === "number" && raw.layout.bandHeight > 0
+          ? raw.layout.bandHeight
+          : undefined,
+      captionFontSize:
+        typeof raw.layout?.captionFontSize === "number" && raw.layout.captionFontSize > 0
+          ? raw.layout.captionFontSize
+          : undefined,
       width: typeof raw.layout?.width === "number" && raw.layout.width > 0 ? raw.layout.width : undefined,
       height: typeof raw.layout?.height === "number" && raw.layout.height > 0 ? raw.layout.height : undefined,
     },

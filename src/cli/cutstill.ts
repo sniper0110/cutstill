@@ -60,7 +60,7 @@ session.create:
   npx tsx src/cli/cutstill.ts session.create --json '{"sourcePath":"./source.mp4"}'
 
 timeline.layout (portrait shorts — 1080×1920, caller fractions, seam captions):
-  npx tsx src/cli/cutstill.ts timeline.layout --json '{"sessionId":"<id>","mode":"stack","stack":{"graphics":0.5,"talent":0.5},"crop":{"x":0.2,"y":0.1,"width":0.4,"height":0.5},"captions":[{"text":"sample line","startSec":0.3,"endSec":2.0}],"palette":{"captionBand":"#111111","caption":"#ffffff","divider":"#222222"}}'
+  npx tsx src/cli/cutstill.ts timeline.layout --json '{"sessionId":"<id>","mode":"stack","stack":{"graphics":0.5,"talent":0.5},"bandHeight":120,"captionFontSize":48,"captions":[{"text":"one two","startSec":0.3,"endSec":2.0,"words":[{"text":"one","startSec":0.3,"endSec":0.9},{"text":"two","startSec":0.9,"endSec":2.0}]}],"palette":{"captionBand":"#111111","caption":"#ffffff","captionActive":"#ffe566","divider":"#222222"}}'
 
 render.still / render.window on that stack:
   npx tsx src/cli/cutstill.ts render.still --json '{"sessionId":"<id>","tSec":0.8}'

@@ -308,24 +308,46 @@ export const TOOL_SPECS: ToolSpec[] = [
         },
         width: { type: "number", description: "Optional canvas width. Stack defaults to 1080 when omitted." },
         height: { type: "number", description: "Optional canvas height. Stack defaults to 1920 when omitted." },
+        bandHeight: {
+          type: "number",
+          description: "Opaque midline caption band height in px. Default 64. Caller-overridable; use this for a real band, not floating text.",
+        },
+        captionFontSize: {
+          type: "number",
+          description: "Caption type size in px. Default 42.",
+        },
         captions: {
           type: "array",
-          description: "Optional midline caption cues in source seconds. Replaces the session caption list when passed.",
+          description: "Optional midline caption cues in source seconds. Replaces the session caption list when passed. Line form: { text, startSec, endSec }. Karaoke: add words: [{ text, startSec, endSec }].",
           items: {
             type: "object",
-            required: ["text", "startSec", "endSec"],
+            required: ["startSec", "endSec"],
             additionalProperties: false,
             properties: {
-              text: { type: "string" },
+              text: { type: "string", description: "Full line. Optional when words is set (joined from words)." },
               startSec: SOURCE_SEC,
               endSec: SOURCE_SEC,
+              words: {
+                type: "array",
+                description: "Optional karaoke words. The word covering the current source second uses palette.captionActive.",
+                items: {
+                  type: "object",
+                  required: ["text", "startSec", "endSec"],
+                  additionalProperties: false,
+                  properties: {
+                    text: { type: "string" },
+                    startSec: SOURCE_SEC,
+                    endSec: SOURCE_SEC,
+                  },
+                },
+              },
             },
           },
         },
         palette: {
           type: "object",
           additionalProperties: true,
-          description: "Session palette. Caller-supplied; no baked brand. caption / captionBand style the seam strip. divider draws the stack seam line.",
+          description: "Session palette. Caller-supplied; no baked brand. caption / captionBand style the seam strip. captionActive is the karaoke highlight for the word covering tSec. divider draws the stack seam line.",
         },
       },
     },

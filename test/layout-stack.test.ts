@@ -257,4 +257,131 @@ describe("timeline.layout stack + captions", () => {
     expect(seam.g).toBeGreaterThan(180);
     expect(seam.r).toBeLessThan(80);
   });
+
+  it("stack host uses caller bandHeight instead of a fixed 64px strip", () => {
+    const host = stillHostSource({
+      active: [],
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      tSec: 0.8,
+      layout: { mode: "stack", stack: { graphics: 0.5, talent: 0.5 }, bandHeight: 160 },
+      captions: [{ text: "real band" }],
+    });
+    expect(host).toMatch(/height:\s*160/);
+    expect(host).not.toMatch(/height:\s*64/);
+    expect(host).toMatch(/top:\s*880/);
+  });
+
+  it("bandHeight 160 paints a taller opaque seam than the 64px default", async () => {
+    const root = await tempSessionsRoot("cutstill-bandh-");
+    const { sessionId } = await createSession(root);
+    await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        bandHeight: 160,
+        captions: [{ text: "real band", startSec: 0, endSec: 3 }],
+        palette: { captionBand: "#00ff66", caption: "#111111" },
+      },
+      ctxFor(root),
+    );
+    const still = (await invokeTool("render.still", { sessionId, tSec: 0.8 }, ctxFor(root))) as {
+      path: string;
+      width: number;
+    };
+    const rgb = await readRgb24(still.path);
+    const inner = samplePixel(rgb, still.width, 40, 960);
+    const outer = samplePixel(rgb, still.width, 40, 890);
+    expect(inner.g).toBeGreaterThan(180);
+    expect(outer.g).toBeGreaterThan(180);
+    expect(inner.r).toBeLessThan(80);
+    expect(outer.r).toBeLessThan(80);
+  });
+
+  it("at tSec inside word2 the host paints that word with palette.captionActive", () => {
+    const host = stillHostSource({
+      active: [],
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      tSec: 1.1,
+      layout: {
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        palette: { caption: "#ffffff", captionActive: "#00ff66", captionBand: "#111111" },
+      },
+      captions: [
+        {
+          text: "one two",
+          words: [
+            { text: "one", startSec: 0.2, endSec: 0.9 },
+            { text: "two", startSec: 0.9, endSec: 1.8 },
+          ],
+        },
+      ],
+    });
+    expect(host).toMatch(/color:\s*"#ffffff"[\s\S]{0,80}"one"/);
+    expect(host).toMatch(/color:\s*"#00ff66"[\s\S]{0,80}"two"/);
+    expect(host).not.toMatch(/color:\s*"#00ff66"[\s\S]{0,80}"one"/);
+  });
+
+  it("persists bandHeight + caption words and still highlights word2 at tSec", async () => {
+    const root = await tempSessionsRoot("cutstill-karaoke-");
+    const { sessionId } = await createSession(root);
+    const snap = (await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        bandHeight: 120,
+        captionFontSize: 48,
+        captions: [
+          {
+            text: "one two",
+            startSec: 0.2,
+            endSec: 2.0,
+            words: [
+              { text: "one", startSec: 0.2, endSec: 0.9 },
+              { text: "two", startSec: 0.9, endSec: 1.8 },
+            ],
+          },
+        ],
+        palette: { captionBand: "#111111", caption: "#ffffff", captionActive: "#00ff66" },
+      },
+      ctxFor(root),
+    )) as {
+      timeline: {
+        layout: {
+          bandHeight?: number;
+          captionFontSize?: number;
+          captions?: Array<{ words?: Array<{ text: string }> }>;
+        };
+      };
+    };
+    expect(snap.timeline.layout.bandHeight).toBe(120);
+    expect(snap.timeline.layout.captionFontSize).toBe(48);
+    expect(snap.timeline.layout.captions?.[0]?.words).toEqual([
+      { text: "one", startSec: 0.2, endSec: 0.9 },
+      { text: "two", startSec: 0.9, endSec: 1.8 },
+    ]);
+    const still = (await invokeTool("render.still", { sessionId, tSec: 1.1 }, ctxFor(root))) as {
+      path: string;
+    };
+    const { readFile } = await import("node:fs/promises");
+    const { sessionPaths } = await import("../src/lib/tools/store.js");
+    const host = await readFile(sessionPaths(root, sessionId).remotion + "/StillHost.tsx", "utf8");
+    expect(host).toMatch(/height:\s*120/);
+    expect(host).toMatch(/fontSize:\s*48/);
+    expect(host).toMatch(/#00ff66/);
+    expect(host).toMatch(/"two"/);
+    expect(still.path).toBeTruthy();
+    const catalog = JSON.stringify(getToolsCatalog());
+    expect(catalog).toContain("bandHeight");
+    expect(catalog).toContain("captionActive");
+    expect(catalog).toContain("words");
+  });
 });

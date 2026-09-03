@@ -50,7 +50,11 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(spec?.input.properties?.stack?.properties?.graphics?.const).toBeUndefined();
     expect(spec?.input.properties?.stack?.properties?.talent?.const).toBeUndefined();
     expect(spec?.input.properties?.captions).toBeTruthy();
-    expect(spec?.input.properties?.captions?.items?.required).toEqual(["text", "startSec", "endSec"]);
+    expect(spec?.input.properties?.captions?.items?.required).toEqual(["startSec", "endSec"]);
+    expect(spec?.input.properties?.captions?.items?.properties?.words).toBeTruthy();
+    expect(spec?.input.properties?.bandHeight).toBeTruthy();
+    expect(spec?.input.properties?.captionFontSize).toBeTruthy();
+    expect(spec?.input.properties?.palette?.description).toMatch(/captionActive/);
     expect(spec?.input.properties?.width?.description).toMatch(/1080/);
     expect(spec?.input.properties?.height?.description).toMatch(/1920/);
     expect(JSON.stringify(catalog).toLowerCase()).not.toContain("encode.preview");

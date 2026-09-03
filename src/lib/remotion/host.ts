@@ -1,13 +1,22 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { cropSourceImgStyle, STACK_DIVIDER_PX, stackDividerTop, stackFractions } from "../layout.js";
-import type { SessionComp, SessionLayout } from "../tools/types.js";
+import {
+  captionBandHeight,
+  captionFontSize,
+  cropSourceImgStyle,
+  STACK_DIVIDER_PX,
+  stackDividerTop,
+  stackFractions,
+} from "../layout.js";
+import type { SessionCaptionWord, SessionComp, SessionLayout } from "../tools/types.js";
 import type { CompSequence } from "./sequences.js";
 
 export interface CaptionCue {
   text: string;
   from?: number;
   duration?: number;
+  words?: SessionCaptionWord[];
+  sourceStartSec?: number;
 }
 
 export function layoutStyle(layout?: SessionLayout): {
@@ -74,22 +83,73 @@ function stackSeamDivider(input: { layout?: SessionLayout; height: number }): st
   return `      <div style={{ position: "absolute", left: 0, right: 0, top: ${top}, height: ${STACK_DIVIDER_PX}, background: ${JSON.stringify(color)}, zIndex: 4 }} />`;
 }
 
+function wordSpans(input: {
+  words: SessionCaptionWord[];
+  tSec: number;
+  idle: string;
+  active: string;
+}): string {
+  return input.words
+    .map((word) => {
+      const on = input.tSec >= word.startSec && input.tSec < word.endSec;
+      const color = on ? input.active : input.idle;
+      return `<span style={{ color: ${JSON.stringify(color)}, marginRight: 14 }}>${JSON.stringify(word.text)}</span>`;
+    })
+    .join("");
+}
+
+function captionInner(input: {
+  cue: CaptionCue;
+  tSec?: number;
+  fps: number;
+  idle: string;
+  active: string;
+  live: boolean;
+}): string {
+  const words = input.cue.words ?? [];
+  if (words.length === 0) return JSON.stringify(input.cue.text);
+  if (input.live) {
+    const sourceStart = input.cue.sourceStartSec ?? 0;
+    return `<CaptionLine words={${JSON.stringify(words)}} sourceStartSec={${sourceStart}} fps={${input.fps}} idle={${JSON.stringify(input.idle)}} active={${JSON.stringify(input.active)}} />`;
+  }
+  return wordSpans({
+    words,
+    tSec: input.tSec ?? 0,
+    idle: input.idle,
+    active: input.active,
+  });
+}
+
 function captionBand(input: {
   layout?: SessionLayout;
   height: number;
   captions?: CaptionCue[];
+  tSec?: number;
+  fps?: number;
+  live?: boolean;
 }): string {
   const cues = input.captions ?? [];
   if (cues.length === 0) return "";
   const stack = (input.layout?.mode ?? "full") === "stack";
   const seam = stack ? stackFractions(input.layout).graphics : 0.5;
-  const bandH = 64;
+  const bandH = captionBandHeight(input.layout);
   const top = Math.max(0, Math.round(seam * input.height - bandH / 2));
   const bg = input.layout?.palette?.captionBand ?? "rgba(0,0,0,0.75)";
-  const fg = input.layout?.palette?.caption ?? "#ffffff";
+  const idle = input.layout?.palette?.caption ?? "#ffffff";
+  const active = input.layout?.palette?.captionActive ?? idle;
+  const fontSize = captionFontSize(input.layout);
+  const fps = input.fps ?? 30;
   const items = cues
     .map((cue) => {
-      const strip = `<div style={{ width: "100%", height: ${bandH}, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 28px", background: ${JSON.stringify(bg)}, color: ${JSON.stringify(fg)}, fontSize: 36, fontWeight: 700, textAlign: "center" }}>${JSON.stringify(cue.text)}</div>`;
+      const inner = captionInner({
+        cue,
+        tSec: input.tSec,
+        fps,
+        idle,
+        active,
+        live: Boolean(input.live),
+      });
+      const strip = `<div style={{ width: "100%", height: ${bandH}, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 28px", background: ${JSON.stringify(bg)}, color: ${JSON.stringify(idle)}, fontSize: ${fontSize}, fontWeight: 700, textAlign: "center" }}>${inner}</div>`;
       if (cue.from != null && cue.duration != null) {
         return `        <Sequence from={${cue.from}} durationInFrames={${Math.max(1, cue.duration)}}>
           ${strip}
@@ -109,10 +169,20 @@ function frameShell(input: {
   layers: string;
   height: number;
   captions?: CaptionCue[];
+  tSec?: number;
+  fps?: number;
+  live?: boolean;
 }): string {
   const style = layoutStyle(input.layout);
   const mode = input.layout?.mode ?? "full";
-  const band = captionBand({ layout: input.layout, height: input.height, captions: input.captions });
+  const band = captionBand({
+    layout: input.layout,
+    height: input.height,
+    captions: input.captions,
+    tSec: input.tSec,
+    fps: input.fps,
+    live: input.live,
+  });
   const seam = stackSeamDivider({ layout: input.layout, height: input.height });
   if (mode === "split") {
     return `    <AbsoluteFill style={{ backgroundColor: "transparent", flexDirection: "row" }}>
@@ -192,6 +262,9 @@ export function stillHostSource(input: {
     layers,
     height: input.height,
     captions: input.captions,
+    tSec: input.tSec,
+    fps: input.fps,
+    live: false,
   });
 
   return `import React from "react";
@@ -279,12 +352,40 @@ export function videoHostSource(input: {
     layers,
     height: input.height,
     captions: input.captions,
+    fps: input.fps,
+    live: true,
   });
 
   return `import React from "react";
 import { AbsoluteFill, Composition, Freeze, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from "remotion";
 
 ${imports}
+
+function CaptionLine(props: {
+  words: Array<{ text: string; startSec: number; endSec: number }>;
+  sourceStartSec: number;
+  fps: number;
+  idle: string;
+  active: string;
+}) {
+  const frame = useCurrentFrame();
+  const tSec = props.sourceStartSec + frame / props.fps;
+  return (
+    <>
+      {props.words.map((word, index) => (
+        <span
+          key={index}
+          style={{
+            color: tSec >= word.startSec && tSec < word.endSec ? props.active : props.idle,
+            marginRight: 14,
+          }}
+        >
+          {word.text}
+        </span>
+      ))}
+    </>
+  );
+}
 
 function SourceLock(props: { trimBefore: number; playbackRate: number; children: React.ReactNode }) {
   const frame = useCurrentFrame();
