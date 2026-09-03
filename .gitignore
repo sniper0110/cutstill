@@ -7,3 +7,4 @@ dist/
 .DS_Store
 coverage/
 .remotion/
+test/fixtures/*.mp4
