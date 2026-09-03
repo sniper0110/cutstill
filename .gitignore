@@ -1,0 +1,9 @@
+node_modules/
+sessions/
+dist/
+*.log
+.env
+.env.local
+.DS_Store
+coverage/
+.remotion/

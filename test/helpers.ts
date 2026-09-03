@@ -1,0 +1,53 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { ensureStandInMp4 } from "../scripts/generate-fixtures.js";
+import { defaultToolsContext, invokeTool } from "../src/lib/tools/index.js";
+import type { ToolsContext } from "../src/lib/tools/types.js";
+
+export { ensureStandInMp4 };
+
+export const MARKER_TSX = `import React from "react";
+
+export default function Marker(props: { color?: string }) {
+  const color = props.color ?? "#ff0033";
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 40,
+        top: 40,
+        width: 120,
+        height: 80,
+        background: color,
+      }}
+    />
+  );
+}
+`;
+
+export async function tempSessionsRoot(label = "cutstill-"): Promise<string> {
+  return mkdtemp(path.join(tmpdir(), label));
+}
+
+export function ctxFor(sessionsRoot: string, extra: Partial<ToolsContext> = {}): ToolsContext {
+  return defaultToolsContext({ sessionsRoot, skipNetwork: true, ...extra });
+}
+
+export async function createSession(sessionsRoot: string, sourcePath?: string) {
+  const source = sourcePath ?? (await ensureStandInMp4());
+  const ctx = ctxFor(sessionsRoot);
+  return invokeTool("session.create", { sourcePath: source }, ctx) as Promise<{
+    sessionId: string;
+    sourcePath: string;
+    comps: unknown[];
+    usage: unknown[];
+    paths: Record<string, string>;
+  }>;
+}
+
+export async function writeBrief(root: string, body: string): Promise<string> {
+  const dest = path.join(root, "notes.md");
+  await writeFile(dest, body, "utf8");
+  return dest;
+}
