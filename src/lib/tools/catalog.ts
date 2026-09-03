@@ -451,7 +451,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   ),
   tool(
     "media.face",
-    "Sample the source with MediaPipe Pose Landmarker Lite and return a stable face+chest box in source pixels and normalized fractions. Optional tSec samples one frame; otherwise sampleEverySec / maxSamples.",
+    "Sample the source with MediaPipe Pose Landmarker Lite and return a stable face+chest box. Pass startSec/endSec (or tSec) for the active short. When omitted, samples the session keep/cut remaining spans — never the cut opener if keeps/cuts exclude it.",
     {
       type: "object",
       required: ["sessionId"],
@@ -459,6 +459,8 @@ export const TOOL_SPECS: ToolSpec[] = [
       properties: {
         sessionId: SESSION_ID,
         tSec: SOURCE_SEC,
+        startSec: { type: "number", description: "Sample window start in source seconds. Prefer this for a short (e.g. 74.6)." },
+        endSec: { type: "number", description: "Sample window end in source seconds (e.g. 122.58)." },
         sampleEverySec: { type: "number", description: "Spacing between samples. Default 0.5. Ignored when tSec is set." },
         maxSamples: { type: "number", description: "Max frames to sample. Default 8." },
       },
@@ -482,6 +484,7 @@ export const TOOL_SPECS: ToolSpec[] = [
         },
         confidence: { type: "number" },
         sampleCount: { type: "number" },
+        sampledSec: { type: "array", items: { type: "number" }, description: "Source seconds that were sampled" },
         sourceWidth: { type: "number" },
         sourceHeight: { type: "number" },
       },
@@ -490,7 +493,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   ),
   tool(
     "timeline.cropFromTalent",
-    "Write layout.crop so the detected face center maps to the lower-pane anchor (default center). zoom=1 keeps current cover feel; zoom>1 tightens. Optional box override skips a new detect. Sets mode stack if needed.",
+    "Write layout.crop so the face center maps to the lower-pane anchor. zoom=1 + existing crop: keep that w/h/y, slide X only. zoom=1 with no prior crop: cover-sized window. zoom>1 tightens from cover. Optional box override skips a new detect.",
     {
       type: "object",
       required: ["sessionId"],
@@ -500,7 +503,12 @@ export const TOOL_SPECS: ToolSpec[] = [
         target: {
           description: "Pane anchor. \"center\" or { anchorX, anchorY } in 0–1.",
         },
-        zoom: { type: "number", description: "Cover-window multiplier. 1 = current stack cover zoom. >1 tighter." },
+        zoom: {
+          type: "number",
+          description: "1 = preserve existing crop w/h/y and recenter X. If no prior crop, use cover size. >1 tightens from cover.",
+        },
+        startSec: { type: "number", description: "If re-detecting, sample window start (same as media.face)" },
+        endSec: { type: "number", description: "If re-detecting, sample window end" },
         box: {
           type: "object",
           description: "Optional face+chest box override (source pixels, or 0–1 fractions).",

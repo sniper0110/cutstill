@@ -78,9 +78,34 @@ function rateAt(range: SourceRange, timeline: SessionTimeline): number {
 }
 
 /**
- * Playable source ranges after cuts. `keeps` are protected windows:
- * exempt from removes, forced to 1.0×. They do not isolate the timeline.
+ * Source spans media.face should sample when the caller omits startSec/endSec/tSec.
+ * Remaining playable ranges after cuts, intersected with keeps when keeps exist.
+ * Never falls back to the opener if cuts or keeps exclude it.
  */
+export function activeSourceWindows(sourceDuration: number, timeline: SessionTimeline): SourceRange[] {
+  const remaining = computeKeptRanges(sourceDuration, timeline).map((range) => ({
+    startSec: range.startSec,
+    endSec: range.endSec,
+  }));
+  if (remaining.length === 0) return [];
+  const keeps = timeline.keeps
+    .map((keep) => clipToDuration(keep, Math.max(0, sourceDuration)))
+    .filter((keep): keep is SourceRange => keep != null);
+  if (keeps.length > 0) {
+    const inside: SourceRange[] = [];
+    for (const range of remaining) {
+      for (const keep of keeps) {
+        const startSec = Math.max(range.startSec, keep.startSec);
+        const endSec = Math.min(range.endSec, keep.endSec);
+        if (endSec - startSec > 1e-4) inside.push({ startSec, endSec });
+      }
+    }
+    if (inside.length > 0) return inside;
+  }
+  return remaining;
+}
+
+/** Playable source ranges after cuts. Keeps are protected; they do not isolate. */
 export function computeKeptRanges(sourceDuration: number, timeline: SessionTimeline): KeptRange[] {
   const duration = Math.max(0, sourceDuration);
   const keeps = timeline.keeps

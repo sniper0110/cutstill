@@ -6,7 +6,7 @@ import { defaultFalVideoPath, jobPayload, readLooseJob, upsertSessionJob, writeL
 import { falModelNeedsImage, isFalModelId, listFalModels } from "../fal/models.js";
 import { layoutCanvasSize, stackFractions } from "../layout.js";
 import { probeMediaMetadata } from "../probe.js";
-import { cropFromTalentBox, normalizeBox, parseTalentTarget, type PixelBox } from "../talent/crop.js";
+import { cropFromTalentBox, normalizeBox, parseTalentTarget, sampleTimes, type PixelBox } from "../talent/crop.js";
 import { sampleTalentBox } from "../talent/pose.js";
 import {
   clampWindow,
@@ -17,7 +17,7 @@ import {
   windowFileStem,
 } from "../remotion/engine.js";
 import { assertCompId, assertSandboxSource } from "../sandbox.js";
-import { mapSessionTime } from "../time.js";
+import { activeSourceWindows, mapSessionTime } from "../time.js";
 import { transcribeSource } from "../transcribe/index.js";
 import {
   asRecord,
@@ -704,7 +704,12 @@ export async function falStatus(input: unknown, ctx: ToolsContext) {
   return jobPayload(next);
 }
 
-function talentPayload(box: TalentBox, sourceWidth: number, sourceHeight: number) {
+function talentPayload(
+  box: TalentBox,
+  sourceWidth: number,
+  sourceHeight: number,
+  sampledSec?: number[],
+) {
   return {
     x: box.x,
     y: box.y,
@@ -713,9 +718,40 @@ function talentPayload(box: TalentBox, sourceWidth: number, sourceHeight: number
     normalized: normalizeBox(box, { width: sourceWidth, height: sourceHeight }),
     confidence: box.confidence,
     sampleCount: box.sampleCount,
+    sampledSec,
     sourceWidth,
     sourceHeight,
   };
+}
+
+function resolveFaceSamplePlan(
+  rec: Record<string, unknown>,
+  durationSec: number,
+  timeline: ToolSession["timeline"],
+): {
+  tSec?: number;
+  startSec?: number;
+  endSec?: number;
+  windows?: Array<{ startSec: number; endSec: number }>;
+  sampledSec: number[];
+} {
+  const tSec = optionalNumber(rec.tSec);
+  const startSec = optionalNumber(rec.startSec);
+  const endSec = optionalNumber(rec.endSec);
+  const sampleEverySec = optionalNumber(rec.sampleEverySec);
+  const maxSamples = optionalNumber(rec.maxSamples);
+  const explicit = tSec != null || startSec != null || endSec != null;
+  const windows = explicit ? undefined : activeSourceWindows(durationSec, timeline);
+  const sampledSec = sampleTimes({
+    durationSec,
+    tSec,
+    startSec,
+    endSec,
+    windows,
+    sampleEverySec,
+    maxSamples,
+  });
+  return { tSec, startSec, endSec, windows, sampledSec };
 }
 
 function parseBoxOverride(raw: unknown, sourceWidth: number, sourceHeight: number): PixelBox {
@@ -746,13 +782,17 @@ async function resolveTalentBox(
     return { ...box, confidence: 1, sampleCount: 0 };
   }
   const detect = ctx.detectTalent ?? sampleTalentBox;
+  const plan = resolveFaceSamplePlan(rec, source.durationSeconds, session.timeline);
   const box = await detect({
     sourcePath: session.sourcePath,
     cacheDir: sessionPaths(ctxRoot(ctx), session.sessionId).talent,
     durationSec: source.durationSeconds,
     sourceWidth: source.width,
     sourceHeight: source.height,
-    tSec: optionalNumber(rec.tSec),
+    tSec: plan.tSec,
+    startSec: plan.startSec,
+    endSec: plan.endSec,
+    windows: plan.windows,
     sampleEverySec: optionalNumber(rec.sampleEverySec),
     maxSamples: optionalNumber(rec.maxSamples),
   });
@@ -764,13 +804,18 @@ export async function mediaFace(input: unknown, ctx: ToolsContext) {
   const sessionId = requireString(rec.sessionId, "sessionId");
   const session = await load(ctx, sessionId);
   const probed = await probeMediaMetadata(session.sourcePath);
+  const plan = resolveFaceSamplePlan(rec, probed.durationSeconds, session.timeline);
   const box = await resolveTalentBox(ctx, session, rec, probed);
   await mutateSession(ctx, sessionId, (current) => {
     current.talentBox = box;
-    recordUsage(current, "media.face", { sampleCount: box.sampleCount, confidence: box.confidence });
+    recordUsage(current, "media.face", {
+      sampleCount: box.sampleCount,
+      confidence: box.confidence,
+      sampledSec: plan.sampledSec,
+    });
     return current;
   });
-  return talentPayload(box, probed.width, probed.height);
+  return talentPayload(box, probed.width, probed.height, plan.sampledSec);
 }
 
 export async function timelineCropFromTalent(input: unknown, ctx: ToolsContext) {
@@ -804,6 +849,7 @@ export async function timelineCropFromTalent(input: unknown, ctx: ToolsContext) 
     pane,
     anchor: target,
     zoom,
+    priorCrop: layout.crop,
   });
   const next = await mutateSession(ctx, sessionId, (current) => {
     current.talentBox = box;

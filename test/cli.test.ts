@@ -73,6 +73,8 @@ describe("CLI schema and --json bind", () => {
     expect(stdout).toMatch(/fal\.status/);
     expect(stdout).toMatch(/media\.face/);
     expect(stdout).toMatch(/timeline\.cropFromTalent/);
+    expect(stdout).toMatch(/startSec":74\.6/);
+    expect(stdout).toMatch(/endSec":122\.58/);
     expect(stdout).not.toMatch(/fal\.attach/);
     expect(stdout).toMatch(/mode":"stack"/);
     expect(stdout).toMatch(/captions/);

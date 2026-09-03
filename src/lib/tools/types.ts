@@ -271,6 +271,9 @@ export interface ToolsContext {
     sourceWidth: number;
     sourceHeight: number;
     tSec?: number;
+    startSec?: number;
+    endSec?: number;
+    windows?: Array<{ startSec: number; endSec: number }>;
     sampleEverySec?: number;
     maxSamples?: number;
   }) => Promise<TalentBox>;

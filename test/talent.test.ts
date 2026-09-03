@@ -11,7 +11,7 @@ import {
 import { poseModelPath } from "../src/lib/talent/pose.js";
 import { getToolsCatalog, invokeTool, isV1ToolName } from "../src/lib/tools/index.js";
 import { readRgb24 } from "../src/lib/png.js";
-import { createSession, ctxFor, tempSessionsRoot } from "./helpers.js";
+import { createSession, ctxFor, ensureStandInMp4, tempSessionsRoot } from "./helpers.js";
 import { existsSync } from "node:fs";
 
 const FACE = FACE_FIXTURE.box;
@@ -47,7 +47,7 @@ describe("talent crop math", () => {
     expect(framed.crop.x + framed.crop.width).toBeLessThanOrEqual(1.0001);
   });
 
-  it("zoom=1 keeps cover window size and cover Y — only X slides", () => {
+  it("without prior crop, zoom=1 uses cover window size and cover Y — only X slides", () => {
     const source = { width: 1920, height: 1080 };
     const pane = { width: 1080, height: 960 };
     const cover = coverWindow(source, pane);
@@ -65,6 +65,28 @@ describe("talent crop math", () => {
     expect(framed.window.x).not.toBeCloseTo(cover.x, 1);
     const faceX = box.x + box.width / 2;
     const nx = (faceX - framed.window.x) / framed.window.width;
+    expect(nx).toBeCloseTo(0.5, 2);
+  });
+
+  it("zoom=1 with prior crop keeps w/h/y and only recenters X", () => {
+    const source = { width: 1920, height: 1080 };
+    const pane = { width: 1080, height: 960 };
+    const prior = { x: 0.12, y: 0.05, width: 0.76, height: 0.85 };
+    const box = { x: 900, y: 80, width: 220, height: 320 };
+    const framed = cropFromTalentBox({
+      box,
+      source,
+      pane,
+      anchor: { anchorX: 0.5, anchorY: 0.5 },
+      zoom: 1,
+      priorCrop: prior,
+    });
+    expect(framed.crop.width).toBeCloseTo(0.76, 5);
+    expect(framed.crop.height).toBeCloseTo(0.85, 5);
+    expect(framed.crop.y).toBeCloseTo(0.05, 5);
+    expect(framed.crop.x).not.toBeCloseTo(0.12, 2);
+    const faceX = (box.x + box.width / 2) / source.width;
+    const nx = (faceX - framed.crop.x) / framed.crop.width;
     expect(nx).toBeCloseTo(0.5, 2);
   });
 
@@ -94,9 +116,12 @@ describe("talent crop math", () => {
     expect(hit!.confidence).toBeGreaterThan(0.7);
   });
 
-  it("sampleTimes honors tSec and maxSamples", () => {
+  it("sampleTimes honors tSec, startSec/endSec, and maxSamples", () => {
     expect(sampleTimes({ durationSec: 10, tSec: 1.5 })).toEqual([1.5]);
-    expect(sampleTimes({ durationSec: 4, sampleEverySec: 1, maxSamples: 3 }).length).toBe(3);
+    expect(sampleTimes({ durationSec: 4, sampleEverySec: 1, maxSamples: 3 })).toEqual([0, 1, 2]);
+    expect(
+      sampleTimes({ durationSec: 200, startSec: 74.6, endSec: 122.58, sampleEverySec: 0.5, maxSamples: 8 }),
+    ).toEqual([74.6, 75.1, 75.6, 76.1, 76.6, 77.1, 77.6, 78.1]);
   });
 });
 
@@ -141,6 +166,78 @@ describe("media.face + timeline.cropFromTalent", () => {
     expect(result.sampleCount).toBe(3);
     expect(result.sourceWidth).toBe(FACE_FIXTURE.width);
     expect(result.sourceHeight).toBe(FACE_FIXTURE.height);
+  });
+
+  it("media.face with startSec/endSec samples that window, not the opener", async () => {
+    const root = await tempSessionsRoot("cutstill-face-win-");
+    const sourcePath = await ensureFaceFixtureMp4();
+    const { sessionId } = await createSession(root, sourcePath);
+    const result = (await invokeTool(
+      "media.face",
+      { sessionId, startSec: 1.2, endSec: 1.9, sampleEverySec: 0.3, maxSamples: 8 },
+      ctxFor(root, { detectTalent: stubDetect() }),
+    )) as { sampledSec: number[] };
+    expect(result.sampledSec.length).toBeGreaterThan(0);
+    expect(Math.min(...result.sampledSec)).toBeGreaterThanOrEqual(1.2);
+    expect(Math.max(...result.sampledSec)).toBeLessThan(1.9);
+    expect(result.sampledSec.some((t) => t < 0.5)).toBe(false);
+  });
+
+  it("media.face without a window defaults to keep/cut remaining spans", async () => {
+    const root = await tempSessionsRoot("cutstill-face-keep-");
+    const sourcePath = await ensureStandInMp4();
+    const { sessionId } = await createSession(root, sourcePath);
+    await invokeTool("timeline.keep", { sessionId, startSec: 1.4, endSec: 2.6 }, ctxFor(root));
+    const result = (await invokeTool(
+      "media.face",
+      { sessionId, sampleEverySec: 0.5, maxSamples: 8 },
+      ctxFor(root, { detectTalent: stubDetect() }),
+    )) as { sampledSec: number[] };
+    expect(result.sampledSec[0]).toBeGreaterThanOrEqual(1.4);
+    expect(result.sampledSec.every((t) => t >= 1.4 && t < 2.6)).toBe(true);
+    expect(result.sampledSec.some((t) => t < 1)).toBe(false);
+  });
+
+  it("media.face after a cut that removes the opener does not sample from 0", async () => {
+    const root = await tempSessionsRoot("cutstill-face-cut-");
+    const sourcePath = await ensureStandInMp4();
+    const { sessionId } = await createSession(root, sourcePath);
+    await invokeTool("timeline.cut", { sessionId, startSec: 0, endSec: 1.1 }, ctxFor(root));
+    const result = (await invokeTool(
+      "media.face",
+      { sessionId, sampleEverySec: 0.5, maxSamples: 8 },
+      ctxFor(root, { detectTalent: stubDetect() }),
+    )) as { sampledSec: number[] };
+    expect(result.sampledSec[0]).toBeGreaterThanOrEqual(1.1);
+    expect(result.sampledSec.every((t) => t >= 1.1)).toBe(true);
+  });
+
+  it("cropFromTalent zoom:1 preserves an approved crop scale and only moves X", async () => {
+    const root = await tempSessionsRoot("cutstill-talent-preserve-");
+    const sourcePath = await ensureFaceFixtureMp4();
+    const { sessionId } = await createSession(root, sourcePath);
+    await invokeTool(
+      "timeline.layout",
+      {
+        sessionId,
+        mode: "stack",
+        stack: { graphics: 0.5, talent: 0.5 },
+        crop: { x: 0.12, y: 0.05, width: 0.76, height: 0.85 },
+      },
+      ctxFor(root),
+    );
+    const framed = (await invokeTool(
+      "timeline.cropFromTalent",
+      { sessionId, target: "center", zoom: 1, box: FACE },
+      ctxFor(root),
+    )) as {
+      timeline: { layout: { crop: { x: number; y: number; width: number; height: number } } };
+    };
+    const crop = framed.timeline.layout.crop;
+    expect(crop.width).toBeCloseTo(0.76, 5);
+    expect(crop.height).toBeCloseTo(0.85, 5);
+    expect(crop.y).toBeCloseTo(0.05, 5);
+    expect(crop.x).not.toBeCloseTo(0.12, 2);
   });
 
   it("cropFromTalent writes layout.crop and centers the face blob in the lower pane", async () => {

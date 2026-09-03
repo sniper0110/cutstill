@@ -93,12 +93,18 @@ export async function sampleTalentBox(input: {
   sourceWidth: number;
   sourceHeight: number;
   tSec?: number;
+  startSec?: number;
+  endSec?: number;
+  windows?: Array<{ startSec: number; endSec: number }>;
   sampleEverySec?: number;
   maxSamples?: number;
 }): Promise<TalentBox> {
   const times = sampleTimes({
     durationSec: input.durationSec,
     tSec: input.tSec,
+    startSec: input.startSec,
+    endSec: input.endSec,
+    windows: input.windows,
     sampleEverySec: input.sampleEverySec,
     maxSamples: input.maxSamples,
   });

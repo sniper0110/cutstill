@@ -91,10 +91,23 @@ export function parseTalentTarget(target: unknown): TalentAnchor {
   throw new Error("target must be \"center\" or { anchorX, anchorY }");
 }
 
+export function priorCropWindow(crop: CropLayout, source: SourceSize): PixelBox {
+  const frac = crop.width <= 1 && crop.height <= 1;
+  if (frac) {
+    return {
+      x: crop.x * source.width,
+      y: crop.y * source.height,
+      width: crop.width * source.width,
+      height: crop.height * source.height,
+    };
+  }
+  return { x: crop.x, y: crop.y, width: crop.width, height: crop.height };
+}
+
 /**
- * Cover-sized window (zoom=1) or tighter (zoom>1). Always the cover aspect —
- * never a guessed box. zoom=1 keeps cover size and cover Y; only X slides so
- * the face hits the pane anchor. zoom>1 keeps that aspect and recenters both axes.
+ * zoom=1 + priorCrop: keep approved w/h/y, slide X only so the face hits the
+ * pane anchor (clamp). zoom=1 without prior: cover window size, slide X, keep
+ * cover Y. zoom>1: tighter cover-derived window, recenter both axes.
  */
 export function cropFromTalentBox(input: {
   box: PixelBox;
@@ -102,12 +115,24 @@ export function cropFromTalentBox(input: {
   pane: PaneSize;
   anchor: TalentAnchor;
   zoom?: number;
+  priorCrop?: CropLayout;
 }): { crop: CropLayout; window: PixelBox; faceCenter: { x: number; y: number } } {
   const zoom = input.zoom == null || input.zoom <= 0 ? 1 : input.zoom;
+  const face = boxCenter(input.box);
+  const prior =
+    zoom === 1 && input.priorCrop ? priorCropWindow(input.priorCrop, input.source) : undefined;
+  if (prior && prior.width > 1 && prior.height > 1) {
+    const width = clamp(prior.width, 2, input.source.width);
+    const height = clamp(prior.height, 2, input.source.height);
+    let x = face.x - input.anchor.anchorX * width;
+    x = clamp(x, 0, Math.max(0, input.source.width - width));
+    const y = clamp(prior.y, 0, Math.max(0, input.source.height - height));
+    const window: PixelBox = { x, y, width, height };
+    return { crop: normalizeBox(window, input.source), window, faceCenter: face };
+  }
   const cover = coverWindow(input.source, input.pane);
   const width = clamp(cover.width / zoom, 2, input.source.width);
   const height = clamp(cover.height / zoom, 2, input.source.height);
-  const face = boxCenter(input.box);
   let x = face.x - input.anchor.anchorX * width;
   let y = zoom === 1 ? cover.y : face.y - input.anchor.anchorY * height;
   x = clamp(x, 0, Math.max(0, input.source.width - width));
@@ -211,20 +236,36 @@ export function stabilizeBoxes(boxes: PixelBox[]): PixelBox | null {
 export function sampleTimes(input: {
   durationSec: number;
   tSec?: number;
+  startSec?: number;
+  endSec?: number;
+  windows?: Array<{ startSec: number; endSec: number }>;
   sampleEverySec?: number;
   maxSamples?: number;
 }): number[] {
+  const duration = Math.max(0, input.durationSec);
   if (input.tSec != null) {
-    return [clamp(input.tSec, 0, Math.max(0, input.durationSec - 0.01))];
+    return [clamp(input.tSec, 0, Math.max(0, duration - 0.01))];
   }
   const every = input.sampleEverySec != null && input.sampleEverySec > 0 ? input.sampleEverySec : 0.5;
   const max = input.maxSamples != null && input.maxSamples > 0 ? Math.floor(input.maxSamples) : 8;
-  const duration = Math.max(0, input.durationSec);
-  if (duration <= 0) return [0];
+  const explicit = input.startSec != null || input.endSec != null;
+  const windows = explicit
+    ? [{ startSec: input.startSec ?? 0, endSec: input.endSec ?? duration }]
+    : input.windows && input.windows.length > 0
+      ? input.windows
+      : [{ startSec: 0, endSec: duration }];
   const times: number[] = [];
-  for (let t = Math.min(0.2, duration / 2); t < duration && times.length < max; t += every) {
-    times.push(Number(t.toFixed(3)));
+  for (const win of windows) {
+    const start = clamp(win.startSec, 0, duration);
+    const end = clamp(win.endSec, start, duration);
+    if (!(end > start)) continue;
+    for (let t = start; t < end && times.length < max; t += every) {
+      times.push(Number(t.toFixed(3)));
+    }
+    if (times.length >= max) break;
   }
-  if (times.length === 0) times.push(0);
+  if (times.length === 0) {
+    times.push(clamp(windows[0]?.startSec ?? 0, 0, Math.max(0, duration - 0.01)));
+  }
   return times;
 }
