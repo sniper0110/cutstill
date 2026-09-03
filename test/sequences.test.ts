@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { videoHostSource, stillHostSource } from "../src/lib/remotion/host.js";
-import { planCompSequences, planStillCompSequences } from "../src/lib/remotion/sequences.js";
+import { compositionDurationFrames, planCompSequences, planStillCompSequences } from "../src/lib/remotion/sequences.js";
 import type { SessionComp } from "../src/lib/tools/types.js";
 
 const flow: SessionComp = {
@@ -49,6 +49,7 @@ describe("planCompSequences", () => {
     const lastFrame = seq.trimBefore + (seq.duration - 1) * seq.playbackRate;
     expect(lastFrame / 30).toBeGreaterThan(11);
     expect(lastFrame / 30).toBeCloseTo(12, 0);
+    expect(compositionDurationFrames(seq.duration, [seq])).toBeGreaterThanOrEqual(12 * 30);
   });
 
   it("keeps a late source cue inside the last output frames after 1.1×", () => {

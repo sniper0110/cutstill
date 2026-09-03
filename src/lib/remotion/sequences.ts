@@ -54,6 +54,17 @@ export function planCompSequences(input: {
   return planned;
 }
 
+/** Composition length must cover locked source frames so Freeze is not clamped short. */
+export function compositionDurationFrames(outputFrames: number, sequences: CompSequence[]): number {
+  let max = Math.max(1, outputFrames);
+  for (const seq of sequences) {
+    const rate = seq.playbackRate > 0 ? seq.playbackRate : 1;
+    const end = seq.trimBefore + Math.max(1, seq.duration) * rate;
+    max = Math.max(max, Math.ceil(end));
+  }
+  return max;
+}
+
 /** Single-frame still at a source second; reuses window/publish sequence planning. */
 export function planStillCompSequences(input: {
   comps: SessionComp[];

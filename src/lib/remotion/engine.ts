@@ -8,7 +8,7 @@ import { ToolError } from "../tools/errors.js";
 import { sessionPaths } from "../tools/store.js";
 import { defaultTimeline, type SessionComp, type ToolSession } from "../tools/types.js";
 import { writeRemotionHost, writeRemotionVideoHost } from "./host.js";
-import { planCompSequences, planStillCompSequences } from "./sequences.js";
+import { compositionDurationFrames, planCompSequences, planStillCompSequences } from "./sequences.js";
 
 export const WINDOW_MAX_SEC = 12;
 export const PUBLISH_MAX_WIDTH = 1920;
@@ -367,12 +367,13 @@ export async function renderSessionMedia(input: {
     fps,
     ranges,
   });
+  const hostDurationInFrames = compositionDurationFrames(durationInFrames, sequences);
   await writeRemotionVideoHost(paths.remotion, {
     active,
     width: input.width,
     height: input.height,
     fps,
-    durationInFrames,
+    durationInFrames: hostDurationInFrames,
     sourceStartSec: input.startSec,
     sequences,
     layout: timeline.layout,
@@ -411,10 +412,11 @@ export async function renderSessionMedia(input: {
     serveUrl,
     composition: {
       ...composition,
-      durationInFrames: Math.max(composition.durationInFrames, durationInFrames),
+      durationInFrames: hostDurationInFrames,
       width: input.width,
       height: input.height,
     },
+    frameRange: durationInFrames <= 1 ? 0 : ([0, durationInFrames - 1] as [number, number]),
     codec: "h264",
     outputLocation: remotionOut,
     inputProps,

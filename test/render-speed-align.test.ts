@@ -9,6 +9,16 @@ function isCue(pixel: { r: number; g: number; b: number }): boolean {
   return pixel.r > 180 && pixel.g < 80 && pixel.b < 90;
 }
 
+function cuePresent(rgb: Buffer, width: number): boolean {
+  const corners = [
+    [490, 30],
+    [580, 30],
+    [490, 80],
+    [580, 80],
+  ];
+  return corners.every(([x, y]) => isCue(samplePixel(rgb, width, x, y)));
+}
+
 describe("window sequence timing under speed", () => {
   it("shows a last-second source cue in the last output frames at 1.1×", async () => {
     const root = await tempSessionsRoot("cutstill-speed-align-");
@@ -41,7 +51,7 @@ describe("window sequence timing under speed", () => {
     await extractSourceFrame({ sourcePath: result.path, fileSec: result.durationSec - 0.35, dest: late });
     const earlyRgb = await readRgb24(early);
     const lateRgb = await readRgb24(late);
-    expect(isCue(samplePixel(earlyRgb, result.width, 70, 70))).toBe(false);
-    expect(isCue(samplePixel(lateRgb, result.width, 70, 70))).toBe(true);
+    expect(cuePresent(earlyRgb, result.width)).toBe(false);
+    expect(cuePresent(lateRgb, result.width)).toBe(true);
   });
 });

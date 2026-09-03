@@ -69,8 +69,8 @@ export default function LateCue() {
     <div
       style={{
         position: "absolute",
-        left: 40,
-        top: 40,
+        left: 480,
+        top: 20,
         width: 120,
         height: 80,
         background: "#ff0033",
