@@ -32,8 +32,12 @@ CLI cannot inline pixels; it writes the PNG and prints path + metadata. MCP must
 | `fal.models` | Wired Fal model ids (Seedance 2.5 t2v / i2v / reference-to-video). |
 | `fal.generate` | Submit a Fal job. `sessionId` preferred so the mp4 lands in `sessions/<id>/fal/`. `generate_audio` defaults **false**. Needs **`FAL_KEY`**. No `fal.attach` yet. |
 | `fal.status` | Poll `jobId`. On completed, download to disk and return `path`. |
+| `media.face` | MediaPipe Pose Landmarker Lite. Face+chest box in source pixels + normalized fractions. |
+| `timeline.cropFromTalent` | Slide `layout.crop` so the face center hits the lower-pane anchor (`center` or `{anchorX,anchorY}`). `zoom` 1 keeps current cover feel. |
 
 Shorts Vox upper pane: `fal.generate` (Seedance) → poll `fal.status` → later `fal.attach` (not in this slice) → `timeline.layout` stack → `render.still` / `render.window`. Live Fal needs **`FAL_KEY`** in the environment. Cutstill never prints the key. Tests mock HTTP; no live Fal in CI.
+
+Short A talking-head: `media.face` → `timeline.cropFromTalent` (`target: "center"`, `zoom: 1`) → `render.still`. Fixes horizontal off-center; zoom stays the cover feel.
 
 Not in this slice: `fal.attach`, empty-pane expand, ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 

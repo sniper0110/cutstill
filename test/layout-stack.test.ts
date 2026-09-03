@@ -52,9 +52,11 @@ describe("layout canvas + stack fractions", () => {
       tSec: 0.5,
       layout: { mode: "stack", stack: { graphics: 0.5, talent: 0.5 }, crop },
     });
-    expect(stacked).toMatch(/transform:"scale\(2\.5\)"/);
-    expect(stacked).toMatch(/transformOrigin:"50% 20%"/);
-    expect(stacked).toMatch(/objectFit:"cover"/);
+    expect(stacked).toMatch(/left:"-50%"/);
+    expect(stacked).toMatch(/top:"-20%"/);
+    expect(stacked).toMatch(/width:"250%"/);
+    expect(stacked).toMatch(/height:"200%"/);
+    expect(stacked).toMatch(/position:"absolute"/);
     const uncropped = stillHostSource({
       active: [],
       width: 1080,

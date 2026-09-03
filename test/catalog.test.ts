@@ -23,6 +23,8 @@ describe("cutstill.tools.v1 catalog", () => {
       "fal.models",
       "fal.generate",
       "fal.status",
+      "media.face",
+      "timeline.cropFromTalent",
     ]);
   });
 
@@ -40,6 +42,8 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(names).toContain("fal.models");
     expect(names).toContain("fal.generate");
     expect(names).toContain("fal.status");
+    expect(names).toContain("media.face");
+    expect(names).toContain("timeline.cropFromTalent");
     expect(names).not.toContain("fal.attach");
   });
 
@@ -86,6 +90,8 @@ describe("cutstill.tools.v1 catalog", () => {
     expect(isV1ToolName("fal.models")).toBe(true);
     expect(isV1ToolName("fal.generate")).toBe(true);
     expect(isV1ToolName("fal.status")).toBe(true);
+    expect(isV1ToolName("media.face")).toBe(true);
+    expect(isV1ToolName("timeline.cropFromTalent")).toBe(true);
     expect(isV1ToolName("fal.attach")).toBe(false);
     expect(isV1ToolName("encode.preview")).toBe(false);
     expect(isV1ToolName("graphic.upsert")).toBe(false);

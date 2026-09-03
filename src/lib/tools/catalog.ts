@@ -449,6 +449,76 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
     [{ code: "FAL_AUTH", description: "FAL_KEY missing or Fal returned 401" }],
   ),
+  tool(
+    "media.face",
+    "Sample the source with MediaPipe Pose Landmarker Lite and return a stable face+chest box in source pixels and normalized fractions. Optional tSec samples one frame; otherwise sampleEverySec / maxSamples.",
+    {
+      type: "object",
+      required: ["sessionId"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        tSec: SOURCE_SEC,
+        sampleEverySec: { type: "number", description: "Spacing between samples. Default 0.5. Ignored when tSec is set." },
+        maxSamples: { type: "number", description: "Max frames to sample. Default 8." },
+      },
+    },
+    {
+      type: "object",
+      required: ["x", "y", "width", "height", "normalized", "confidence", "sampleCount"],
+      properties: {
+        x: { type: "number" },
+        y: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" },
+        normalized: {
+          type: "object",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            width: { type: "number" },
+            height: { type: "number" },
+          },
+        },
+        confidence: { type: "number" },
+        sampleCount: { type: "number" },
+        sourceWidth: { type: "number" },
+        sourceHeight: { type: "number" },
+      },
+    },
+    [{ code: "FACE_NOT_FOUND", description: "No pose/face in sampled frames" }],
+  ),
+  tool(
+    "timeline.cropFromTalent",
+    "Write layout.crop so the detected face center maps to the lower-pane anchor (default center). zoom=1 keeps current cover feel; zoom>1 tightens. Optional box override skips a new detect. Sets mode stack if needed.",
+    {
+      type: "object",
+      required: ["sessionId"],
+      additionalProperties: false,
+      properties: {
+        sessionId: SESSION_ID,
+        target: {
+          description: "Pane anchor. \"center\" or { anchorX, anchorY } in 0–1.",
+        },
+        zoom: { type: "number", description: "Cover-window multiplier. 1 = current stack cover zoom. >1 tighter." },
+        box: {
+          type: "object",
+          description: "Optional face+chest box override (source pixels, or 0–1 fractions).",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            width: { type: "number" },
+            height: { type: "number" },
+          },
+        },
+        tSec: SOURCE_SEC,
+        sampleEverySec: { type: "number" },
+        maxSamples: { type: "number" },
+      },
+    },
+    SESSION_SNAPSHOT,
+    [{ code: "FACE_NOT_FOUND", description: "No pose/face in sampled frames" }],
+  ),
 ];
 
 export function getToolsCatalog(): ToolsCatalog {

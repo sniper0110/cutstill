@@ -4,8 +4,10 @@ import path from "node:path";
 import { defaultFalHttp, falDownload, falPoll, falResult, falSubmit, resolveFalKey } from "../fal/client.js";
 import { defaultFalVideoPath, jobPayload, readLooseJob, upsertSessionJob, writeLooseJob } from "../fal/jobs.js";
 import { falModelNeedsImage, isFalModelId, listFalModels } from "../fal/models.js";
-import { layoutCanvasSize } from "../layout.js";
+import { layoutCanvasSize, stackFractions } from "../layout.js";
 import { probeMediaMetadata } from "../probe.js";
+import { cropFromTalentBox, normalizeBox, parseTalentTarget, type PixelBox } from "../talent/crop.js";
+import { sampleTalentBox } from "../talent/pose.js";
 import {
   clampWindow,
   publishSize,
@@ -41,6 +43,7 @@ import type {
   SessionCaptionWord,
   SessionComp,
   SessionLayout,
+  TalentBox,
   ToolSession,
   ToolsContext,
 } from "./types.js";
@@ -701,6 +704,126 @@ export async function falStatus(input: unknown, ctx: ToolsContext) {
   return jobPayload(next);
 }
 
+function talentPayload(box: TalentBox, sourceWidth: number, sourceHeight: number) {
+  return {
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    normalized: normalizeBox(box, { width: sourceWidth, height: sourceHeight }),
+    confidence: box.confidence,
+    sampleCount: box.sampleCount,
+    sourceWidth,
+    sourceHeight,
+  };
+}
+
+function parseBoxOverride(raw: unknown, sourceWidth: number, sourceHeight: number): PixelBox {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ToolError("INVALID_INPUT", "box must be { x, y, width, height }");
+  }
+  const rec = raw as Record<string, unknown>;
+  const x = requireNumber(rec.x, "box.x");
+  const y = requireNumber(rec.y, "box.y");
+  const width = requireNumber(rec.width, "box.width");
+  const height = requireNumber(rec.height, "box.height");
+  if (width <= 0 || height <= 0) throw new ToolError("INVALID_INPUT", "box width/height must be > 0");
+  const frac = x <= 1 && y <= 1 && width <= 1 && height <= 1;
+  if (frac) {
+    return { x: x * sourceWidth, y: y * sourceHeight, width: width * sourceWidth, height: height * sourceHeight };
+  }
+  return { x, y, width, height };
+}
+
+async function resolveTalentBox(
+  ctx: ToolsContext,
+  session: ToolSession,
+  rec: Record<string, unknown>,
+  source: { width: number; height: number; durationSeconds: number },
+): Promise<TalentBox> {
+  if (rec.box != null) {
+    const box = parseBoxOverride(rec.box, source.width, source.height);
+    return { ...box, confidence: 1, sampleCount: 0 };
+  }
+  const detect = ctx.detectTalent ?? sampleTalentBox;
+  const box = await detect({
+    sourcePath: session.sourcePath,
+    cacheDir: sessionPaths(ctxRoot(ctx), session.sessionId).talent,
+    durationSec: source.durationSeconds,
+    sourceWidth: source.width,
+    sourceHeight: source.height,
+    tSec: optionalNumber(rec.tSec),
+    sampleEverySec: optionalNumber(rec.sampleEverySec),
+    maxSamples: optionalNumber(rec.maxSamples),
+  });
+  return box;
+}
+
+export async function mediaFace(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const session = await load(ctx, sessionId);
+  const probed = await probeMediaMetadata(session.sourcePath);
+  const box = await resolveTalentBox(ctx, session, rec, probed);
+  await mutateSession(ctx, sessionId, (current) => {
+    current.talentBox = box;
+    recordUsage(current, "media.face", { sampleCount: box.sampleCount, confidence: box.confidence });
+    return current;
+  });
+  return talentPayload(box, probed.width, probed.height);
+}
+
+export async function timelineCropFromTalent(input: unknown, ctx: ToolsContext) {
+  const rec = asRecord(input);
+  const sessionId = requireString(rec.sessionId, "sessionId");
+  const session = await load(ctx, sessionId);
+  const probed = await probeMediaMetadata(session.sourcePath);
+  let target;
+  try {
+    target = parseTalentTarget(rec.target);
+  } catch (error) {
+    throw new ToolError("INVALID_INPUT", error instanceof Error ? error.message : "invalid target");
+  }
+  const zoom = optionalNumber(rec.zoom) ?? 1;
+  if (zoom <= 0) throw new ToolError("INVALID_INPUT", "zoom must be > 0");
+  const box =
+    rec.box != null || !session.talentBox
+      ? await resolveTalentBox(ctx, session, rec, probed)
+      : session.talentBox;
+  const layout = session.timeline.layout;
+  const canvas = layoutCanvasSize(
+    { ...layout, mode: "stack", stack: layout.stack ?? { graphics: 0.5, talent: 0.5 } },
+    probed,
+  );
+  const talentFrac = stackFractions(layout.stack ? layout : { mode: "stack", stack: { graphics: 0.5, talent: 0.5 } })
+    .talent;
+  const pane = { width: canvas.width, height: canvas.height * talentFrac };
+  const framed = cropFromTalentBox({
+    box,
+    source: { width: probed.width, height: probed.height },
+    pane,
+    anchor: target,
+    zoom,
+  });
+  const next = await mutateSession(ctx, sessionId, (current) => {
+    current.talentBox = box;
+    const prev = current.timeline.layout;
+    current.timeline.layout = {
+      ...prev,
+      mode: "stack",
+      stack: prev.stack ?? { graphics: 0.5, talent: 0.5 },
+      crop: framed.crop,
+    };
+    recordUsage(current, "timeline.cropFromTalent", {
+      zoom,
+      anchorX: target.anchorX,
+      anchorY: target.anchorY,
+    });
+    return current;
+  });
+  return snapshot(ctx, next);
+}
+
 export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Promise<unknown>> = {
   "session.create": sessionCreate,
   "session.get": sessionGet,
@@ -717,4 +840,6 @@ export const HANDLERS: Record<string, (input: unknown, ctx: ToolsContext) => Pro
   "fal.models": falModels,
   "fal.generate": falGenerate,
   "fal.status": falStatus,
+  "media.face": mediaFace,
+  "timeline.cropFromTalent": timelineCropFromTalent,
 };

@@ -1,11 +1,11 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ensureStandInMp4 } from "../scripts/generate-fixtures.js";
+import { ensureFaceFixtureMp4, ensureStandInMp4 } from "../scripts/generate-fixtures.js";
 import { defaultToolsContext, invokeTool } from "../src/lib/tools/index.js";
 import type { ToolsContext } from "../src/lib/tools/types.js";
 
-export { ensureStandInMp4 };
+export { ensureFaceFixtureMp4, ensureStandInMp4 };
 
 export const MOVING_TSX = `import React from "react";
 import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";

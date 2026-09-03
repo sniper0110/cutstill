@@ -12,6 +12,7 @@ export function defaultToolsContext(overrides: Partial<ToolsContext> = {}): Tool
     now: overrides.now,
     falHttp: overrides.falHttp,
     falKey: overrides.falKey,
+    detectTalent: overrides.detectTalent,
   };
 }
 

@@ -4,7 +4,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { V1_TOOL_NAMES } from "../src/lib/tools/index.js";
-import { ensureStandInMp4, tempSessionsRoot } from "./helpers.js";
+import { FACE_FIXTURE } from "../scripts/generate-fixtures.js";
+import { ensureFaceFixtureMp4, ensureStandInMp4, tempSessionsRoot } from "./helpers.js";
 
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("src/cli/cutstill.ts");
@@ -70,6 +71,8 @@ describe("CLI schema and --json bind", () => {
     expect(stdout).toMatch(/fal\.models/);
     expect(stdout).toMatch(/fal\.generate/);
     expect(stdout).toMatch(/fal\.status/);
+    expect(stdout).toMatch(/media\.face/);
+    expect(stdout).toMatch(/timeline\.cropFromTalent/);
     expect(stdout).not.toMatch(/fal\.attach/);
     expect(stdout).toMatch(/mode":"stack"/);
     expect(stdout).toMatch(/captions/);
@@ -167,6 +170,28 @@ describe("CLI schema and --json bind", () => {
     expect(still.stdout).not.toMatch(/imageBase64/);
     expect(still.stdout.length).toBeLessThan(8_000);
   }, 90_000);
+
+  it("CLI media.face + cropFromTalent with a box override", async () => {
+    const root = await tempSessionsRoot("cutstill-cli-talent-");
+    const sourcePath = await ensureFaceFixtureMp4();
+    const env = { CUTSTILL_SESSIONS_ROOT: root };
+    const created = await cutstill(["session.create", "--json", JSON.stringify({ sourcePath })], env);
+    expect(created.code, `session.create failed: ${created.stdout}`).toBe(0);
+    const sessionId = (created.json as { sessionId: string }).sessionId;
+    const cropped = await cutstill(
+      [
+        "timeline.cropFromTalent",
+        "--json",
+        JSON.stringify({ sessionId, target: "center", zoom: 1, box: FACE_FIXTURE.box }),
+      ],
+      env,
+    );
+    expect(cropped.code, `cropFromTalent failed: ${cropped.stdout}\n${cropped.stderr}`).toBe(0);
+    const crop = (cropped.json as { timeline: { layout: { mode: string; crop?: { width: number } } } }).timeline
+      .layout;
+    expect(crop.mode).toBe("stack");
+    expect(crop.crop?.width).toBeGreaterThan(0);
+  });
 
   it("CLI fal.models lists wired ids without FAL_KEY", async () => {
     const result = await cutstill(["fal.models", "--json", "{}"], { FAL_KEY: "" });

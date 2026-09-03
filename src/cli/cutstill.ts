@@ -71,6 +71,10 @@ fal (Seedance 2.5 — set FAL_KEY; never printed). generate_audio defaults false
   npx tsx src/cli/cutstill.ts fal.generate --json '{"sessionId":"<id>","modelId":"bytedance/seedance-2.5/text-to-video","prompt":"upper-pane lantern, 9:16","resolution":"720p","duration":6,"aspect_ratio":"9:16"}'
   npx tsx src/cli/cutstill.ts fal.status --json '{"sessionId":"<id>","jobId":"<jobId>"}'
 
+media.face + timeline.cropFromTalent (Pose Landmarker Lite — face+chest, then stack crop):
+  npx tsx src/cli/cutstill.ts media.face --json '{"sessionId":"<id>","sampleEverySec":0.5,"maxSamples":8}'
+  npx tsx src/cli/cutstill.ts timeline.cropFromTalent --json '{"sessionId":"<id>","target":"center","zoom":1}'
+
 schema:
   npx tsx src/cli/cutstill.ts schema
 

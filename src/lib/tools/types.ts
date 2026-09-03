@@ -16,6 +16,8 @@ export const V1_TOOL_NAMES = [
   "fal.models",
   "fal.generate",
   "fal.status",
+  "media.face",
+  "timeline.cropFromTalent",
 ] as const;
 
 export type V1ToolName = (typeof V1_TOOL_NAMES)[number];
@@ -166,6 +168,15 @@ export interface SessionComp {
   props: Record<string, unknown>;
 }
 
+export interface TalentBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  sampleCount: number;
+}
+
 export interface FalJob {
   jobId: string;
   modelId: string;
@@ -234,6 +245,7 @@ export interface ToolSession {
   timeline: SessionTimeline;
   usage: UsageEvent[];
   falJobs?: FalJob[];
+  talentBox?: TalentBox;
   createdAt: number;
   updatedAt: number;
 }
@@ -251,6 +263,17 @@ export interface ToolsContext {
   falHttp?: FalHttp;
   /** Test-only key override. Live reads process.env.FAL_KEY. */
   falKey?: string;
+  /** Test-only talent detector. Live uses MediaPipe Pose Landmarker Lite. */
+  detectTalent?: (input: {
+    sourcePath: string;
+    cacheDir: string;
+    durationSec: number;
+    sourceWidth: number;
+    sourceHeight: number;
+    tSec?: number;
+    sampleEverySec?: number;
+    maxSamples?: number;
+  }) => Promise<TalentBox>;
 }
 
 export interface JsonSchema {

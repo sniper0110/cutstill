@@ -31,6 +31,7 @@ export function sessionPaths(sessionsRoot: string, sessionId: string) {
     usage: path.join(root, "usage.json"),
     cache: path.join(root, "cache"),
     fal: path.join(root, "fal"),
+    talent: path.join(root, "cache", "talent"),
   };
 }
 
