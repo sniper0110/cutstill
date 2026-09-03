@@ -69,6 +69,12 @@ describe("timeline.layout stack + captions", () => {
     expect(snap.timeline.layout.mode).toBe("stack");
     expect(snap.timeline.layout.stack).toEqual({ graphics: 0.45, talent: 0.55 });
     expect(snap.timeline.layout.captions).toEqual([{ text: "sample line", startSec: 0.2, endSec: 1.8 }]);
+    const got = (await invokeTool("session.get", { sessionId }, ctxFor(root))) as {
+      timeline: { layout: { mode: string; stack?: { graphics: number; talent: number }; captions?: unknown } };
+    };
+    expect(got.timeline.layout.mode).toBe("stack");
+    expect(got.timeline.layout.stack).toEqual({ graphics: 0.45, talent: 0.55 });
+    expect(got.timeline.layout.captions).toEqual([{ text: "sample line", startSec: 0.2, endSec: 1.8 }]);
     const catalog = JSON.stringify(getToolsCatalog());
     expect(catalog).toContain('"stack"');
     expect(catalog.toLowerCase()).not.toContain("pycad");

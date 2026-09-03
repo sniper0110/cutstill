@@ -67,6 +67,9 @@ describe("CLI schema and --json bind", () => {
     expect(stdout).toMatch(/timeline\.keep/);
     expect(stdout).toMatch(/timeline\.speed/);
     expect(stdout).toMatch(/timeline\.layout/);
+    expect(stdout).toMatch(/mode":"stack"/);
+    expect(stdout).toMatch(/captions/);
+    expect(stdout).toMatch(/1080×1920|1080x1920/);
     expect(stdout).toMatch(/see the PNG/);
     expect(stdout).not.toMatch(/ave direct/);
     expect(stdout).not.toMatch(/graphic\.upsert/);
@@ -90,6 +93,60 @@ describe("CLI schema and --json bind", () => {
     expect(transcript.code).toBe(0);
     expect(((transcript.json as { words: unknown[] }).words ?? []).length).toBeGreaterThanOrEqual(2);
   });
+
+  it("CLI stack layout + captions + still/window at 1080×1920", async () => {
+    const root = await tempSessionsRoot("cutstill-cli-stack-");
+    const sourcePath = await ensureStandInMp4();
+    const env = { CUTSTILL_SESSIONS_ROOT: root };
+    const created = await cutstill(["session.create", "--json", JSON.stringify({ sourcePath })], env);
+    expect(created.code, `session.create failed: ${created.stdout}\n${created.stderr}`).toBe(0);
+    const sessionId = (created.json as { sessionId: string }).sessionId;
+
+    const laid = await cutstill(
+      [
+        "timeline.layout",
+        "--json",
+        JSON.stringify({
+          sessionId,
+          mode: "stack",
+          stack: { graphics: 0.5, talent: 0.5 },
+          captions: [{ text: "sample line", startSec: 0.3, endSec: 2.0 }],
+          palette: { captionBand: "#111111", caption: "#ffffff" },
+        }),
+      ],
+      env,
+    );
+    expect(laid.code, `timeline.layout failed: ${laid.stdout}\n${laid.stderr}`).toBe(0);
+    const layout = (
+      laid.json as {
+        timeline: { layout: { mode: string; stack?: { graphics: number; talent: number }; captions?: unknown } };
+      }
+    ).timeline.layout;
+    expect(layout.mode).toBe("stack");
+    expect(layout.stack).toEqual({ graphics: 0.5, talent: 0.5 });
+    expect(layout.captions).toEqual([{ text: "sample line", startSec: 0.3, endSec: 2.0 }]);
+
+    const got = await cutstill(["session.get", "--json", JSON.stringify({ sessionId })], env);
+    expect((got.json as { timeline: { layout: { mode: string } } }).timeline.layout.mode).toBe("stack");
+
+    const still = await cutstill(["render.still", "--json", JSON.stringify({ sessionId, tSec: 0.8 })], env);
+    expect(still.code, `render.still failed: ${still.stdout}\n${still.stderr}`).toBe(0);
+    const stillPayload = still.json as { path: string; width: number; height: number; imageBase64?: string };
+    expect(existsSync(stillPayload.path)).toBe(true);
+    expect(stillPayload.width).toBe(1080);
+    expect(stillPayload.height).toBe(1920);
+    expect(stillPayload.imageBase64).toBeUndefined();
+
+    const win = await cutstill(
+      ["render.window", "--json", JSON.stringify({ sessionId, startSec: 0.4, endSec: 1.5 })],
+      env,
+    );
+    expect(win.code, `render.window failed: ${win.stdout}\n${win.stderr}`).toBe(0);
+    const winPayload = win.json as { path: string; width: number; height: number };
+    expect(existsSync(winPayload.path)).toBe(true);
+    expect(winPayload.width).toBe(1080);
+    expect(winPayload.height).toBe(1920);
+  }, 180_000);
 
   it("CLI render.still prints path metadata and does not inline pixels", async () => {
     const root = await tempSessionsRoot("cutstill-cli-still-");

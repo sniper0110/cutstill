@@ -28,7 +28,7 @@ CLI cannot inline pixels; it writes the PNG and prints path + metadata. MCP must
 | `timeline.cut` | Remove a source-second range. |
 | `timeline.keep` | Protect a source window: cuts skip it, rate is 1.0× there. The rest of the source remains (not isolate). |
 | `timeline.speed` | Global rate and/or a source-window rate. |
-| `timeline.layout` | Caller-supplied split / crop / palette / divider. No baked fractions or brand colors. Default is full-frame until set. |
+| `timeline.layout` | Canvas: `split` (landscape side-by-side), `stack` (portrait shorts, default 1080×1920), `full`, `crop`. Caller fractions (`split` / `stack`), optional seam `captions`, palette. No baked 25/75 or brand colors. Default is full-frame until set. |
 
 Not in this slice: ffmpeg `comp` engine, `comp.scaffold`, `clip.fetch`. There is no `encode.preview` name.
 
@@ -71,7 +71,17 @@ npx tsx src/cli/cutstill.ts timeline.keep --json '{"sessionId":"<id>","startSec"
 npx tsx src/cli/cutstill.ts timeline.speed --json '{"sessionId":"<id>","rate":2}'
 
 npx tsx src/cli/cutstill.ts timeline.layout --json '{"sessionId":"<id>","mode":"split","split":{"talent":0.4,"graphics":0.6,"dividerPx":8},"palette":{"divider":"#222222"}}'
+
+npx tsx src/cli/cutstill.ts timeline.layout --json '{
+  "sessionId":"<id>",
+  "mode":"stack",
+  "stack":{"graphics":0.5,"talent":0.5},
+  "captions":[{"text":"sample line","startSec":0.3,"endSec":2.0}],
+  "palette":{"captionBand":"#111111","caption":"#ffffff"}
+}'
 ```
+
+`mode: "stack"` is the shorts canvas: upper graphics pane, lower talking-head **cover crop**, default **1080×1920**. Caller supplies `stack.graphics` / `stack.talent`. `captions` sit on the pane seam (`startSec`/`endSec` are source seconds). Palette keys `caption` / `captionBand` style the strip. Then `render.still` / `render.window` use that canvas — no extra size fields required. Empty-pane expand is not in this slice.
 
 After a cut, `render.still` still takes source `tSec` and returns mapped `fileSec`. Example: cut `1.0–2.0`, then `tSec: 2.5` returns `fileSec` ≈ `1.5`.
 
