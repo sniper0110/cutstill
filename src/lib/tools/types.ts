@@ -1,0 +1,364 @@
+export const TOOLS_CATALOG_ID = "cutstill.tools.v1";
+
+export const V1_TOOL_NAMES = [
+  "session.create",
+  "session.get",
+  "session.cost",
+  "comp.upsert",
+  "comp.remove",
+  "render.still",
+  "render.window",
+  "render.publish",
+  "media.transcribe",
+  "timeline.cut",
+  "timeline.keep",
+  "timeline.speed",
+  "timeline.layout",
+  "fal.models",
+  "fal.generate",
+  "fal.status",
+  "media.face",
+  "timeline.cropFromTalent",
+] as const;
+
+export type V1ToolName = (typeof V1_TOOL_NAMES)[number];
+
+export interface SourceRange {
+  startSec: number;
+  endSec: number;
+}
+
+export type LayoutMode = "split" | "full" | "crop" | "stack";
+
+export interface SpeedWindow extends SourceRange {
+  rate: number;
+}
+
+export interface SplitLayout {
+  talent: number;
+  graphics: number;
+  dividerPx?: number;
+}
+
+export interface CropLayout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Portrait shorts: upper graphics pane, lower talking-head crop. Fractions are caller-supplied. */
+export interface StackLayout {
+  graphics: number;
+  talent: number;
+}
+
+export interface SessionCaptionWord {
+  text: string;
+  startSec: number;
+  endSec: number;
+}
+
+export interface SessionCaption {
+  text: string;
+  startSec: number;
+  endSec: number;
+  words?: SessionCaptionWord[];
+}
+
+export interface SessionLayout {
+  mode: LayoutMode;
+  split?: SplitLayout;
+  stack?: StackLayout;
+  crop?: CropLayout;
+  palette?: Record<string, string>;
+  captions?: SessionCaption[];
+  /** Opaque midline caption band height in px. Default 64. */
+  bandHeight?: number;
+  /** Caption type size in px. Default 42. */
+  captionFontSize?: number;
+  /** Optional override. Stack defaults to 1080×1920 when omitted. */
+  width?: number;
+  height?: number;
+}
+
+export interface SessionTimeline {
+  removes: SourceRange[];
+  /** Protected source windows: not isolated. Exempt from cuts; forced to 1.0×. */
+  keeps: SourceRange[];
+  speed: number;
+  speedWindows: SpeedWindow[];
+  layout: SessionLayout;
+}
+
+function normalizeCaptionWord(raw: unknown): SessionCaptionWord | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const item = raw as Record<string, unknown>;
+  if (typeof item.text !== "string" || typeof item.startSec !== "number" || typeof item.endSec !== "number") {
+    return null;
+  }
+  if (!(item.endSec > item.startSec)) return null;
+  return { text: item.text, startSec: item.startSec, endSec: item.endSec };
+}
+
+export function normalizeCaption(raw: unknown): SessionCaption {
+  const item = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const words = Array.isArray(item.words)
+    ? item.words.map(normalizeCaptionWord).filter((word): word is SessionCaptionWord => word != null)
+    : undefined;
+  const text =
+    typeof item.text === "string" && item.text
+      ? item.text
+      : (words ?? []).map((word) => word.text).join(" ");
+  const startSec =
+    typeof item.startSec === "number" ? item.startSec : (words?.[0]?.startSec ?? 0);
+  const endSec =
+    typeof item.endSec === "number" ? item.endSec : (words?.[words.length - 1]?.endSec ?? startSec);
+  return { text, startSec, endSec, ...(words && words.length > 0 ? { words } : {}) };
+}
+
+export function defaultTimeline(): SessionTimeline {
+  return {
+    removes: [],
+    keeps: [],
+    speed: 1,
+    speedWindows: [],
+    layout: { mode: "full" },
+  };
+}
+
+export function normalizeTimeline(raw: Partial<SessionTimeline> | undefined): SessionTimeline {
+  const base = defaultTimeline();
+  if (!raw || typeof raw !== "object") return base;
+  return {
+    removes: Array.isArray(raw.removes) ? raw.removes : [],
+    keeps: Array.isArray(raw.keeps) ? raw.keeps : [],
+    speed: typeof raw.speed === "number" && raw.speed > 0 ? raw.speed : 1,
+    speedWindows: Array.isArray(raw.speedWindows) ? raw.speedWindows : [],
+    layout: {
+      mode:
+        raw.layout?.mode === "split" ||
+        raw.layout?.mode === "crop" ||
+        raw.layout?.mode === "stack"
+          ? raw.layout.mode
+          : "full",
+      split: raw.layout?.split,
+      stack: raw.layout?.stack,
+      crop: raw.layout?.crop,
+      palette: raw.layout?.palette ?? {},
+      captions: Array.isArray(raw.layout?.captions) ? raw.layout.captions.map(normalizeCaption) : [],
+      bandHeight:
+        typeof raw.layout?.bandHeight === "number" && raw.layout.bandHeight > 0
+          ? raw.layout.bandHeight
+          : undefined,
+      captionFontSize:
+        typeof raw.layout?.captionFontSize === "number" && raw.layout.captionFontSize > 0
+          ? raw.layout.captionFontSize
+          : undefined,
+      width: typeof raw.layout?.width === "number" && raw.layout.width > 0 ? raw.layout.width : undefined,
+      height: typeof raw.layout?.height === "number" && raw.layout.height > 0 ? raw.layout.height : undefined,
+    },
+  };
+}
+
+export interface SessionComp {
+  id: string;
+  engine: "remotion";
+  sourcePath: string;
+  window: SourceRange;
+  props: Record<string, unknown>;
+}
+
+export interface TalentBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  sampleCount: number;
+}
+
+export interface FalJob {
+  jobId: string;
+  modelId: string;
+  sessionId?: string;
+  status: "queued" | "in_progress" | "completed" | "failed";
+  path?: string;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  costUsd?: number;
+  prompt?: string;
+  /** Billing inputs so fal.status can estimate when generate+status are split. */
+  resolution?: string;
+  generateAudio?: boolean;
+  requestedDurationSec?: number;
+}
+
+export interface FalHttpRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+}
+
+export interface FalHttpResponse {
+  status: number;
+  json?: unknown;
+  bytes?: Buffer;
+}
+
+export type FalHttp = (req: FalHttpRequest) => Promise<FalHttpResponse>;
+
+export interface CallCost {
+  costUsd: number;
+  currency: "USD";
+  sessionTotalUsd: number;
+}
+
+export interface UsageEvent {
+  action: string;
+  at: number;
+  costUsd: number;
+  estimated: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TranscriptWord {
+  text: string;
+  startSec: number;
+  endSec: number;
+  confidence?: number;
+}
+
+export interface TranscriptUtterance {
+  text: string;
+  startSec: number;
+  endSec: number;
+  speaker?: string;
+}
+
+export interface SessionTranscript {
+  language: string;
+  durationSec: number;
+  words: TranscriptWord[];
+  utterances?: TranscriptUtterance[];
+  sourceHash?: string;
+}
+
+export interface ToolSession {
+  sessionId: string;
+  sourcePath: string;
+  briefPath?: string;
+  briefCopy?: string;
+  comps: SessionComp[];
+  transcript?: SessionTranscript;
+  timeline: SessionTimeline;
+  usage: UsageEvent[];
+  falJobs?: FalJob[];
+  talentBox?: TalentBox;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ToolsTranscribeResult extends SessionTranscript {
+  cached?: boolean;
+}
+
+export interface ToolsContext {
+  sessionsRoot: string;
+  transcribe?: (filePath: string, durationSeconds: number) => Promise<ToolsTranscribeResult>;
+  now?: () => number;
+  skipNetwork?: boolean;
+  /** Test-only Fal HTTP. Live calls use fetch + FAL_KEY. Never log the key. */
+  falHttp?: FalHttp;
+  /** Test-only key override. Live reads process.env.FAL_KEY. */
+  falKey?: string;
+  /** Test-only talent detector. Live uses MediaPipe Pose Landmarker Lite. */
+  detectTalent?: (input: {
+    sourcePath: string;
+    cacheDir: string;
+    durationSec: number;
+    sourceWidth: number;
+    sourceHeight: number;
+    tSec?: number;
+    startSec?: number;
+    endSec?: number;
+    windows?: Array<{ startSec: number; endSec: number }>;
+    sampleEverySec?: number;
+    maxSamples?: number;
+  }) => Promise<TalentBox>;
+}
+
+export interface JsonSchema {
+  type?: string | string[];
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  additionalProperties?: boolean | JsonSchema;
+  items?: JsonSchema;
+  enum?: unknown[];
+  const?: unknown;
+  minimum?: number;
+  minItems?: number;
+  minLength?: number;
+}
+
+export interface ToolErrorSpec {
+  code: string;
+  description: string;
+}
+
+export interface ToolSpec {
+  name: V1ToolName;
+  description: string;
+  input: JsonSchema;
+  output: JsonSchema;
+  errors: ToolErrorSpec[];
+}
+
+export interface ToolsCatalog {
+  schema: typeof TOOLS_CATALOG_ID;
+  tools: ToolSpec[];
+}
+
+export interface RenderStillResult {
+  path: string;
+  tSec: number;
+  fileSec: number;
+  compsActive: string[];
+  width: number;
+  height: number;
+}
+
+export interface RenderWindowResult {
+  path: string;
+  posterPath: string;
+  startSec: number;
+  endSec: number;
+  durationSec: number;
+  compsActive: string[];
+  width: number;
+  height: number;
+  hasAudio: boolean;
+}
+
+export interface RenderPublishResult {
+  path: string;
+  posterPath: string;
+  durationSec: number;
+  width: number;
+  height: number;
+  hasAudio: boolean;
+}
+
+export interface McpImageContent {
+  type: "image";
+  data: string;
+  mimeType: "image/png";
+}
+
+export interface McpTextContent {
+  type: "text";
+  text: string;
+}
