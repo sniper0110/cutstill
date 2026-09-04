@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { getToolsCatalog, invokeTool, isV1ToolName } from "../src/lib/tools/index.js";
+import { FAL_QUEUE_ORIGIN, falPoll, falQueueAppId, falResult } from "../src/lib/fal/client.js";
 import { FAL_MODEL_IDS } from "../src/lib/fal/models.js";
 import { createSession, ctxFor, tempSessionsRoot } from "./helpers.js";
 import { ensureStandInMp4 } from "../scripts/generate-fixtures.js";
@@ -43,6 +44,34 @@ function mockFalHttp(input: {
     return { status: 404, json: { detail: "not mocked" } };
   };
 }
+
+describe("falQueueAppId", () => {
+  it("strips the endpoint suffix for status/result queue URLs", () => {
+    expect(falQueueAppId("bytedance/seedance-2.5/text-to-video")).toBe("bytedance/seedance-2.5");
+    expect(falQueueAppId("bytedance/seedance-2.5/image-to-video")).toBe("bytedance/seedance-2.5");
+    expect(falQueueAppId("bytedance/seedance-2.5/reference-to-video")).toBe("bytedance/seedance-2.5");
+    expect(falQueueAppId("bytedance/seedance-2.5")).toBe("bytedance/seedance-2.5");
+  });
+
+  it("falPoll and falResult hit the stripped app id, not the full model path", async () => {
+    const seen: string[] = [];
+    const http = async (req: { method: string; url: string }) => {
+      seen.push(req.url);
+      if (req.url.includes("/status")) return { status: 200, json: { status: "IN_QUEUE" } };
+      return {
+        status: 200,
+        json: { video: { url: "https://cdn.example.test/fal-out.mp4" } },
+      };
+    };
+    await falPoll({ http, key: "test-key", modelId: T2V, jobId: "job-seed-1" });
+    await falResult({ http, key: "test-key", modelId: T2V, jobId: "job-seed-1" });
+    expect(seen).toEqual([
+      `${FAL_QUEUE_ORIGIN}/bytedance/seedance-2.5/requests/job-seed-1/status`,
+      `${FAL_QUEUE_ORIGIN}/bytedance/seedance-2.5/requests/job-seed-1`,
+    ]);
+    expect(seen.join("\n")).not.toContain("text-to-video");
+  });
+});
 
 describe("fal catalog", () => {
   it("lists fal.models / fal.generate / fal.status on cutstill.tools.v1", () => {

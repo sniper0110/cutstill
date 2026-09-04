@@ -6,6 +6,11 @@ export const FAL_QUEUE_ORIGIN = "https://queue.fal.run";
 
 export type FalJobStatus = "queued" | "in_progress" | "completed" | "failed";
 
+/** Queue status/result URLs use the app id, not the full endpoint path (405 otherwise). */
+export function falQueueAppId(modelId: string): string {
+  return modelId.replace(/\/(text-to-video|image-to-video|reference-to-video)$/, "");
+}
+
 export function resolveFalKey(explicit?: string): string {
   const key = (explicit ?? process.env.FAL_KEY ?? "").trim();
   if (!key) {
@@ -102,7 +107,7 @@ export async function falPoll(input: {
 }): Promise<FalJobStatus> {
   const res = await falRequest(input.http, input.key, {
     method: "GET",
-    url: `${FAL_QUEUE_ORIGIN}/${input.modelId}/requests/${input.jobId}/status`,
+    url: `${FAL_QUEUE_ORIGIN}/${falQueueAppId(input.modelId)}/requests/${input.jobId}/status`,
   });
   if (res.status === 401 || res.status === 403) {
     mapHttpError(res.status, input.key, "Fal rejected the API key");
@@ -122,7 +127,7 @@ export async function falResult(input: {
 }): Promise<{ videoUrl: string; costUsd?: number }> {
   const res = await falRequest(input.http, input.key, {
     method: "GET",
-    url: `${FAL_QUEUE_ORIGIN}/${input.modelId}/requests/${input.jobId}`,
+    url: `${FAL_QUEUE_ORIGIN}/${falQueueAppId(input.modelId)}/requests/${input.jobId}`,
   });
   if (res.status === 401 || res.status === 403) {
     mapHttpError(res.status, input.key, "Fal rejected the API key");
