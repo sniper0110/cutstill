@@ -132,4 +132,104 @@ describe("tool results expose cost", () => {
     const estimate = estimateFalGenerateCost({ durationSec: 5, resolution: "480p" });
     expect(submitted.cost.costUsd).not.toBe(estimate);
   });
+
+  it("fal.status completed without vendor cost writes rate-card fallback", async () => {
+    const root = await tempSessionsRoot("cutstill-cost-fal-fallback-");
+    const { sessionId } = await createSession(root);
+    const { readFile } = await import("node:fs/promises");
+    const { ensureStandInMp4 } = await import("./helpers.js");
+    const standin = await readFile(await ensureStandInMp4());
+    let poll = "IN_QUEUE";
+    const falHttp = async (req: { method: string; url: string }) => {
+      if (req.method === "POST" && req.url.includes("queue.fal.run")) {
+        return { status: 200, json: { request_id: "job-fallback-1" } };
+      }
+      if (req.url.includes("/status")) return { status: 200, json: { status: poll } };
+      if (req.url.includes("/requests/")) {
+        return { status: 200, json: { video: { url: "https://cdn.example.test/fal-out.mp4" } } };
+      }
+      if (req.url.includes("cdn.example.test")) return { status: 200, bytes: standin };
+      return { status: 404, json: { detail: "not mocked" } };
+    };
+    const ctx = ctxFor(root, { skipNetwork: true, falKey: "test-key", falHttp });
+    const queued = (await invokeTool(
+      "fal.generate",
+      {
+        sessionId,
+        modelId: "bytedance/seedance-2.5/text-to-video",
+        prompt: "lantern",
+        duration: 5,
+        resolution: "480p",
+      },
+      ctx,
+    )) as { jobId: string; status: string; cost: { costUsd: number } };
+    expect(queued.status).toBe("queued");
+
+    poll = "COMPLETED";
+    const fallback = estimateFalGenerateCost({ durationSec: 5, resolution: "480p" });
+    const done = (await invokeTool("fal.status", { sessionId, jobId: queued.jobId }, ctx)) as {
+      status: string;
+      costUsd?: number;
+      cost: { costUsd: number; sessionTotalUsd: number };
+    };
+    expect(done.status).toBe("completed");
+    expect(done.costUsd).toBe(fallback);
+    expect(done.cost.costUsd).toBe(fallback);
+    expect(done.cost.costUsd).toBeGreaterThan(0);
+    expect(done.cost.sessionTotalUsd).toBe(fallback);
+
+    const rollup = (await invokeTool("session.cost", { sessionId }, ctxFor(root))) as {
+      totalUsd: number;
+      byTool: Record<string, { count: number; costUsd: number }>;
+    };
+    expect(rollup.totalUsd).toBe(fallback);
+    const falSpend =
+      (rollup.byTool["fal.generate"]?.costUsd ?? 0) + (rollup.byTool["fal.status"]?.costUsd ?? 0);
+    expect(falSpend).toBe(fallback);
+  });
+
+  it("fal.status completed prefers vendor cost over the rate-card fallback", async () => {
+    const root = await tempSessionsRoot("cutstill-cost-fal-vendor-status-");
+    const { sessionId } = await createSession(root);
+    const { readFile } = await import("node:fs/promises");
+    const { ensureStandInMp4 } = await import("./helpers.js");
+    const standin = await readFile(await ensureStandInMp4());
+    let poll = "IN_QUEUE";
+    const falHttp = async (req: { method: string; url: string }) => {
+      if (req.method === "POST" && req.url.includes("queue.fal.run")) {
+        return { status: 200, json: { request_id: "job-vendor-1" } };
+      }
+      if (req.url.includes("/status")) return { status: 200, json: { status: poll } };
+      if (req.url.includes("/requests/")) {
+        return {
+          status: 200,
+          json: { video: { url: "https://cdn.example.test/fal-out.mp4" }, cost: 0.042 },
+        };
+      }
+      if (req.url.includes("cdn.example.test")) return { status: 200, bytes: standin };
+      return { status: 404, json: { detail: "not mocked" } };
+    };
+    const ctx = ctxFor(root, { skipNetwork: true, falKey: "test-key", falHttp });
+    const queued = (await invokeTool(
+      "fal.generate",
+      {
+        sessionId,
+        modelId: "bytedance/seedance-2.5/text-to-video",
+        prompt: "lantern",
+        duration: 5,
+        resolution: "480p",
+      },
+      ctx,
+    )) as { jobId: string };
+    poll = "COMPLETED";
+    const estimate = estimateFalGenerateCost({ durationSec: 5, resolution: "480p" });
+    const done = (await invokeTool("fal.status", { sessionId, jobId: queued.jobId }, ctx)) as {
+      costUsd?: number;
+      cost: { costUsd: number; sessionTotalUsd: number };
+    };
+    expect(done.costUsd).toBe(0.042);
+    expect(done.cost.costUsd).toBe(0.042);
+    expect(done.cost.costUsd).not.toBe(estimate);
+    expect(done.cost.sessionTotalUsd).toBe(0.042);
+  });
 });

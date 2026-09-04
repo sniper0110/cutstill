@@ -57,5 +57,11 @@ async function attachResultCost(
       /* no session yet */
     }
   }
+  if ((name === "fal.generate" || name === "fal.status") && result && typeof result === "object" && !Array.isArray(result)) {
+    const billed = (result as Record<string, unknown>).costUsd;
+    if (typeof billed === "number" && Number.isFinite(billed) && billed >= 0) {
+      callCost = billed;
+    }
+  }
   return attachCallCost(result, { costUsd: callCost, sessionTotalUsd: total });
 }

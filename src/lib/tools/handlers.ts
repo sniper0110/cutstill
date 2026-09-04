@@ -129,6 +129,45 @@ function recordUsage(
   ];
 }
 
+function upsertFalJobUsage(
+  session: ToolSession,
+  input: {
+    jobId: string;
+    modelId: string;
+    costUsd: number;
+    estimated: boolean;
+    tool: "fal.generate" | "fal.status";
+    metadata?: Record<string, unknown>;
+  },
+): void {
+  const index = session.usage.findIndex(
+    (item) =>
+      (item.action === "fal.generate" || item.action === "fal.status") &&
+      item.metadata?.jobId === input.jobId,
+  );
+  const metadata = {
+    modelId: input.modelId,
+    jobId: input.jobId,
+    estimated: input.estimated,
+    ...input.metadata,
+  };
+  if (index >= 0) {
+    const prev = session.usage[index]!;
+    session.usage = session.usage.map((item, i) =>
+      i === index
+        ? {
+            ...item,
+            costUsd: input.costUsd,
+            estimated: input.estimated,
+            metadata: { ...prev.metadata, ...metadata },
+          }
+        : item,
+    );
+    return;
+  }
+  recordUsage(session, input.tool, metadata, input.costUsd, input.estimated);
+}
+
 export async function sessionCreate(input: unknown, ctx: ToolsContext) {
   const rec = asRecord(input);
   const sourcePath = path.resolve(requireString(rec.sourcePath, "sourcePath"));
@@ -650,8 +689,45 @@ async function materializeFalVideo(input: {
     width,
     height,
     durationSec,
-    costUsd: vendorUsd ?? input.job.costUsd,
+    costUsd: vendorUsd,
   };
+}
+
+function settleFalJob(job: FalJob, vendorUsd?: number): { job: FalJob; estimated: boolean } {
+  const charge = resolveFalCharge({
+    vendorUsd,
+    durationSec: job.requestedDurationSec ?? job.durationSec,
+    resolution: job.resolution,
+    generateAudio: job.generateAudio,
+  });
+  return { job: { ...job, costUsd: charge.costUsd }, estimated: charge.estimated };
+}
+
+async function persistFalCharge(
+  ctx: ToolsContext,
+  sessionId: string | undefined,
+  job: FalJob,
+  estimated: boolean,
+  tool: "fal.generate" | "fal.status",
+): Promise<void> {
+  await persistFalJob(ctx, sessionId, job);
+  if (!sessionId) return;
+  await mutateSession(ctx, sessionId, (current) => {
+    upsertFalJobUsage(current, {
+      jobId: job.jobId,
+      modelId: job.modelId,
+      costUsd: job.costUsd ?? 0,
+      estimated,
+      tool,
+      metadata: {
+        resolution: job.resolution,
+        duration: job.requestedDurationSec ?? job.durationSec,
+        generate_audio: job.generateAudio === true,
+      },
+    });
+    current.falJobs = upsertSessionJob(current.falJobs, job);
+    return current;
+  });
 }
 
 export async function falModels() {
@@ -707,32 +783,32 @@ export async function falGenerate(input: unknown, ctx: ToolsContext) {
     status: "queued",
     prompt,
     costUsd: 0,
+    resolution,
+    generateAudio: generate_audio,
+    requestedDurationSec: duration,
   };
   const peeked = await falPoll({ http, key, modelId, jobId });
   job.status = peeked;
   if (peeked === "completed") {
     job = await materializeFalVideo({ ctx, job, sessionId, outPath });
-  }
-  const charge = resolveFalCharge({
-    vendorUsd: job.costUsd,
-    durationSec: duration ?? job.durationSec,
-    resolution,
-    generateAudio: generate_audio,
-  });
-  job.costUsd = charge.costUsd;
-  await persistFalJob(ctx, sessionId, job);
-  if (sessionId) {
-    await mutateSession(ctx, sessionId, (current) => {
-      recordUsage(
-        current,
-        "fal.generate",
-        { modelId, jobId, resolution, duration, generate_audio, estimated: charge.estimated },
-        charge.costUsd,
-        charge.estimated,
-      );
-      current.falJobs = upsertSessionJob(current.falJobs, job);
-      return current;
-    });
+    const settled = settleFalJob(job, job.costUsd);
+    job = settled.job;
+    await persistFalCharge(ctx, sessionId, job, settled.estimated, "fal.generate");
+  } else {
+    await persistFalJob(ctx, sessionId, job);
+    if (sessionId) {
+      await mutateSession(ctx, sessionId, (current) => {
+        recordUsage(
+          current,
+          "fal.generate",
+          { modelId, jobId, resolution, duration, generate_audio, estimated: true },
+          0,
+          true,
+        );
+        current.falJobs = upsertSessionJob(current.falJobs, job);
+        return current;
+      });
+    }
   }
   return jobPayload(job);
 }
@@ -742,17 +818,25 @@ export async function falStatus(input: unknown, ctx: ToolsContext) {
   const jobId = requireString(rec.jobId, "jobId");
   const sessionId = optionalString(rec.sessionId);
   const job = await loadFalJob(ctx, sessionId, jobId);
+  const sid = sessionId ?? job.sessionId;
   if (job.status === "completed" && job.path && existsSync(job.path)) {
-    return jobPayload(job);
+    const settled =
+      job.costUsd != null && job.costUsd > 0 ? { job, estimated: false } : settleFalJob(job);
+    await persistFalCharge(ctx, sid, settled.job, settled.estimated, "fal.status");
+    return jobPayload(settled.job);
   }
   const key = resolveFalKey(ctx.falKey);
   const http = falHttpFor(ctx);
   const status = await falPoll({ http, key, modelId: job.modelId, jobId });
   let next: FalJob = { ...job, status };
   if (status === "completed") {
-    next = await materializeFalVideo({ ctx, job: next, sessionId: sessionId ?? job.sessionId });
+    next = await materializeFalVideo({ ctx, job: next, sessionId: sid });
+    const settled = settleFalJob(next, next.costUsd);
+    next = settled.job;
+    await persistFalCharge(ctx, sid, next, settled.estimated, "fal.status");
+    return jobPayload(next);
   }
-  await persistFalJob(ctx, sessionId ?? next.sessionId, next);
+  await persistFalJob(ctx, sid, next);
   return jobPayload(next);
 }
 

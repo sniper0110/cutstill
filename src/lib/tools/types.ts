@@ -189,6 +189,10 @@ export interface FalJob {
   durationSec?: number;
   costUsd?: number;
   prompt?: string;
+  /** Billing inputs so fal.status can estimate when generate+status are split. */
+  resolution?: string;
+  generateAudio?: boolean;
+  requestedDurationSec?: number;
 }
 
 export interface FalHttpRequest {
